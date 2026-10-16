@@ -1,0 +1,16 @@
+# 统一换行符：仓库里存 LF，检出时按平台决定。
+# 不这样设置的话，Windows 上每次 git 操作都会刷一堆
+# "LF will be replaced by CRLF" 警告，看着吓人其实无害。
+* text=auto eol=lf
+
+# 二进制文件不要做换行符转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.mp4  binary
+*.zip  binary
+
+# 大文件：_sfx_clips.js 是 base64 音效，别按文本处理（避免逐行 diff 卡顿）
+_sfx_clips.js -diff -text

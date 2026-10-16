@@ -1,0 +1,56 @@
+# ---- 构建产物（由 _build.js 生成，不入库）----
+index.html
+
+# ---- 分发目录（构建产物）----
+发布/
+
+# ---- 参考资料：35 MB 的视频与截图，不适合入库 ----
+# （研究用的 UP 主视频、逐帧截图、音效素材原件）
+_参考资料/
+
+# ---- 移植过来的参考副本（历史遗留）----
+移植/
+
+# ---- 音效样本（体积大，且由外部素材合成）----
+# _sfx_clips.js 是 2.4 MB 的 base64 音效。
+# 仓库里**包含**它 —— 这样别人 clone 下来就能直接构建出带音效的版本。
+# 如果你以后觉得仓库太大，取消下面这行的注释即可（构建出的将是无音效版）。
+# _sfx_clips.js
+
+# ---- 系统 / 编辑器 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.vscode/
+.idea/
+*.log
+
+# ---- 临时脚本（开发时随手写的排查脚本，不入库）----
+_audit*.js
+_scale.js
+_sm.js
+_rnd*.js
+_decouple.js
+_share.js
+_len.js
+_dbg.js
+_vt*.js
+_vault.js
+_chk*.js
+_find.js
+_probe.js
+_tmp*.js
+_shot*.js
+_shot_ui.html
+_mapsw.js
+_density.js
+_look.js
+_mix.js
+_ascii.js
+_trace.js
+_auto.js
+_spw.js
+_conf.js
+_build_test.js

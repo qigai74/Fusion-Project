@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
+<title>__GAME_FULL_TITLE__</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;touch-action:manipulation;
+  -webkit-user-select:none;user-select:none}
+input,textarea,select{-webkit-user-select:text;user-select:text}
+.card,.pane{touch-action:pan-y}   /* 配置面板保留滚动，其余区域屏蔽浏览器手势 */
+/* ═══════════ 标题屏 ═══════════ */
+.titlescreen{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(1200px 700px at 50% 30%,#152a44,#06090f 70%)}
+.titlescreen.hidden{display:none}
+.ts-inner{text-align:center;padding:0 24px}
+.ts-kicker{font-size:13px;letter-spacing:7px;color:#4a6d96;margin-bottom:18px}
+.ts-title{font-size:clamp(34px,6vw,68px);margin:0 0 14px;letter-spacing:3px;font-weight:800;
+  background:linear-gradient(92deg,#eaf4ff,#7dffa8 55%,#5ee07a);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.ts-title span{opacity:.45;margin:0 .12em}
+.ts-sub{color:#8ea3c0;font-size:15px;letter-spacing:2px;margin-bottom:38px}
+.ts-actions{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:36px}
+.btn.big{font-size:16px;padding:14px 38px;letter-spacing:1px}
+.ts-note{color:#6b7f9c;font-size:13px;margin-bottom:10px}
+.ts-foot{color:#3f5271;font-size:12px;letter-spacing:.5px}
+/* ═══ 模式切换条 ═══ */
+.modebar{display:flex;gap:10px;margin:0 0 14px}
+.modebtn{flex:1 1 0;text-align:left;cursor:pointer;padding:11px 14px;border-radius:10px;
+  border:1px solid #24354f;background:#0e1622;color:#9db1cc;line-height:1.45;font:inherit;
+  transition:border-color .15s,background .15s}
+.modebtn b{display:block;font-size:14px;color:#cfe0f5;margin-bottom:2px;letter-spacing:.5px}
+.modebtn span{font-size:11.5px;color:#6f84a1}
+.modebtn:hover{border-color:#39527a}
+.modebtn.on{border-color:#5ee07a;background:linear-gradient(180deg,#16281c,#101a16)}
+.modebtn.on b{color:#8dfba9}
+.modebtn.on span{color:#7fae90}
+/* 撤离模式不显示的页签 */
+.tabs .tab.hide{display:none}
+/* ═══ 我的地图（保存列表）═══ */
+.savedmaps{display:flex;flex-direction:column;gap:5px;margin:2px 0 6px;max-height:170px;overflow:auto}
+.smap{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:7px;
+  border:1px solid #22334b;background:#0f1724;font-size:12px}
+.smap .nm{flex:1 1 auto;color:#cfe0f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smap .meta{color:#6f84a1;font-size:11px}
+.smap button{padding:3px 8px;font-size:11px}
+.txtin{background:#0c1420;border:1px solid #25354f;border-radius:6px;color:#cfe0f5;
+  padding:6px 9px;font:inherit;font-size:12px;min-width:110px;flex:1 1 auto}
+/* ═══ 预算模式的兵种商店 ═══ */
+.shop{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px;margin:2px 0 6px}
+.shopitem{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:8px;
+  border:1px solid #22334b;background:#0f1724}
+.shopitem .nm{flex:1 1 auto;min-width:0}
+.shopitem .nm b{display:block;font-size:12.5px;color:#cfe0f5}
+.shopitem .nm i{font-style:normal;font-size:11px;color:#6f84a1}
+.shopitem .pc{font-size:12px;color:#ffd84d;font-weight:700;min-width:32px;text-align:right}
+.shopitem .qt{font-size:13px;color:#8fd0ff;font-weight:700;min-width:22px;text-align:center}
+.shopitem button{padding:2px 8px;font-size:12px;line-height:1.3}
+.shopitem.off{opacity:.42}
+.modebtn b{position:relative}
+.modebar{flex-wrap:wrap}
+.modebtn{min-width:190px}
+/* ═══ 关于页 ═══ */
+.abouthead{text-align:center;padding:8px 0 14px}
+.abouthead .ts-kicker{margin-bottom:6px;letter-spacing:5px;font-size:11px}
+.aboutname{margin:0;font-size:26px;letter-spacing:2px;
+  background:linear-gradient(92deg,#eaf4ff,#7dffa8 60%,#5ee07a);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.aboutver{color:#6f84a1;font-size:12px;margin-top:4px;letter-spacing:1px}
+#pane-about a{color:#8fd0ff;text-decoration:none}
+#pane-about a:hover{text-decoration:underline}
+/* 地图浏览：把地图按比例画进一个固定高度的框里，保持像素感 */
+.mapview{margin:0 0 6px;border:1px solid #1c2a40;border-radius:8px;background:#05080e;
+  overflow:hidden;display:flex;justify-content:center}
+.mapview canvas{display:block;max-width:100%;height:auto;image-rendering:pixelated}
+body{background:radial-gradient(1400px 800px at 50% -14%,#16273d,#070a10 66%);color:#dfe8f5;
+  font-family:"HarmonyOS Sans SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow:hidden}
+.app{height:100%;display:flex;flex-direction:column;align-items:center;gap:7px;padding:9px 12px 10px}
+header{width:100%;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:17px;margin:0;letter-spacing:1px}
+h1 span{color:#5ee07a}
+.tagline{color:#8ea3c0;font-size:11.5px}
+/* ---- 主舞台：左栏（队伍/战报） + 地图 + 右栏（战况/指标） ----
+   目标：所有信息面板都放到地图两侧，绝不遮挡战场。
+   窄屏（<1100px）时自动退回「面板叠在地图上方/下方」的旧行为。 */
+.arena{width:100%;flex:1 1 auto;display:flex;gap:10px;align-items:flex-start;justify-content:center;
+  min-height:0}
+.rail{flex:0 0 208px;display:flex;flex-direction:column;gap:8px;max-height:100%;overflow:hidden auto;
+  scrollbar-width:thin}
+.rail.left{order:0}
+.rail.right{order:2}
+.stage{position:relative;order:1;border:1px solid #22304a;border-radius:13px;background:#05080e;overflow:hidden;
+  box-shadow:0 16px 44px rgba(0,0,0,.62);
+  width:min(100%, calc((100vh - 150px) * 1.8182))}
+canvas#game{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+/* 地图上只保留「时间」这一条最关键的浮层，其余全部移到侧栏 */
+.hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:7px;padding:7px 11px;
+  background:linear-gradient(#080d15f2,#080d1500);pointer-events:none;font-size:12px;flex-wrap:wrap}
+/* 侧栏卡片 */
+.card2{background:#0a111cc8;border:1px solid #1c2a40;border-radius:10px;padding:8px 10px;font-size:12px}
+.card2 .ct{color:#8ea3c0;font-size:11px;letter-spacing:.6px;margin-bottom:6px;display:flex;
+  justify-content:space-between;align-items:center}
+@media (max-width:1100px){
+  .arena{flex-direction:column;align-items:stretch}
+  .rail{flex:0 0 auto;width:100%;flex-direction:row;flex-wrap:wrap}
+  .rail.left,.rail.right{order:0}
+  .rail .card2{flex:1 1 200px}
+  .stage{order:0;width:100%}
+}
+.pill{background:#0b1220d0;border:1px solid #1f2c42;border-radius:999px;padding:3px 10px;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:5px}
+.pill b{color:#fff}
+.pill.i{border-color:#5a3d78}.pill.i b{color:#d9a4ff}
+.pill.mode{border-color:#3a5a7a}.pill.mode b{color:#8fd0ff}
+.pill.time{font-family:ui-monospace,monospace;font-size:13.5px;letter-spacing:1px}
+.pill.time.low{border-color:#7a2c2c;color:#ff9a8a;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.45}}
+/* ---- 战况面板（底部）：兵种计数 + 双方人数 + 对向血条 + Boss 血条 ---- */
+.warbar{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;min-width:340px;max-width:92%;
+  background:#070c14e0;border:1px solid #1f2c42;border-radius:12px;padding:7px 12px 9px;
+  font-size:12px;pointer-events:none;backdrop-filter:blur(3px)}
+.warbar.hidden{display:none}
+.wb-row{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:center;margin-bottom:5px;
+  color:#9db1cc;font-size:11.5px;min-height:14px}
+.wb-row .ci{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.wb-row .ci b{color:#eaf2ff;font-family:ui-monospace,monospace}
+.wb-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
+.wb-side{display:flex;align-items:center;gap:7px}
+.wb-side.right{flex-direction:row}
+.wb-lab{font-size:12px;font-weight:700}
+.wb-num{font-family:ui-monospace,monospace;font-size:23px;line-height:1;letter-spacing:1px}
+.wb-mid{flex:1 1 auto;height:1px;background:#24334a}
+.wb-bar{position:relative;height:6px;border-radius:3px;background:#141d2c;overflow:hidden;display:flex}
+.wb-fillA{display:block;height:100%;background:linear-gradient(90deg,#3fd67a,#7dffa8);transition:width .25s}
+.wb-fillB{display:block;height:100%;background:linear-gradient(90deg,#b06bff,#ff7ad9);transition:width .25s}
+.wb-boss{margin-top:6px;display:flex;align-items:center;gap:7px;font-size:11.5px;color:#ffb0f0}
+.wb-boss.hidden{display:none}
+.wb-boss .bn{font-weight:700;white-space:nowrap}
+.wb-boss .bbar{flex:1 1 auto;height:5px;border-radius:3px;background:#2a1630;overflow:hidden}
+.wb-boss .bfill{display:block;height:100%;background:linear-gradient(90deg,#ff4fd8,#ff9ae8);transition:width .2s}
+.wb-boss .bhp{font-family:ui-monospace,monospace;color:#ffd6f6;white-space:nowrap}
+.cdot{width:8px;height:8px;border-radius:50%;display:inline-block;vertical-align:middle;flex:0 0 auto}
+.sq{width:8px;height:8px;border-radius:2px;display:inline-block;vertical-align:middle;flex:0 0 auto}
+#teamChips{position:absolute;left:10px;top:44px;display:flex;flex-direction:column;gap:6px;
+  pointer-events:none;font-size:11px;max-width:250px}
+.sideblock{background:#0a0f18cc;border:1px solid #1e2a40;border-radius:11px;padding:6px 9px;line-height:1.7}
+.sideblock .hd{font-weight:700;letter-spacing:1px;margin-bottom:2px}
+.chips .chip{display:inline-flex;align-items:center;gap:4px;margin:0 6px 0 0;white-space:nowrap}
+.dead{opacity:.3;text-decoration:line-through}
+#feed{position:absolute;left:10px;bottom:10px;font-size:11.5px;max-width:460px;line-height:1.6;pointer-events:none}
+#feed .fi{background:#0a0f18c4;border-left:2px solid #33507a;padding:2px 7px;border-radius:0 6px 6px 0;margin-top:3px}
+.bar{width:100%;display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:center}
+.bar .sep{width:1px;height:18px;background:#22304a;margin:0 3px}
+button{font-family:inherit;cursor:pointer}
+.btn{background:#152135;border:1px solid #2a3c58;color:#dbe6f5;border-radius:8px;padding:6px 10px;font-size:12px;transition:.14s}
+.btn:hover{background:#1d2d47;border-color:#3b567c}
+.btn.on{background:#1f4d33;border-color:#5ee07a;color:#dfffe9}
+.btn.sel{background:#26456e;border-color:#8fd0ff;color:#eaf6ff}
+.btn.go{background:linear-gradient(#2f8b52,#1f6a3c);border-color:#4ecb79;color:#fff;font-weight:700;padding:9px 22px;font-size:14px}
+.btn.go:hover{filter:brightness(1.12)}
+.btn.warm{border-color:#7a5a2c}
+.btn.del{border-color:#7a3a3a;color:#ffbdbd;padding:4px 9px}
+.overlay{position:absolute;inset:0;background:#040710b8;backdrop-filter:blur(5px);display:flex;
+  align-items:center;justify-content:center;padding:11px}
+.card{background:#0c1320;border:1px solid #22304a;border-radius:14px;width:100%;max-width:1200px;
+  max-height:calc(100% - 14px);overflow:auto;padding:12px 14px 14px;box-shadow:0 20px 60px rgba(0,0,0,.62)}
+.card h2{font-size:15.5px;margin:0 0 8px}
+.tabs{display:flex;gap:5px;border-bottom:1px solid #1c2740;margin-bottom:10px;flex-wrap:wrap}
+.tab{background:none;border:none;color:#8ea3c0;padding:6px 12px;font-size:12.5px;border-bottom:2px solid transparent}
+.tab:hover{color:#cfe0f5}.tab.active{color:#fff;border-bottom-color:#5ee07a}
+.pane{display:none}.pane.on{display:block}
+.teamList{display:flex;flex-direction:column;gap:10px}
+.teamList.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.teamBox{border:1px solid #1d2a41;border-radius:11px;padding:8px 10px;background:#0a1020a0}
+.teamBox .ttl{font-size:12.5px;font-weight:700;letter-spacing:.6px;margin-bottom:6px;display:flex;
+  justify-content:space-between;align-items:center;gap:8px}
+.teamBox .ttl .tin{background:#0a1020;border:1px solid #22304a;color:#eaf3ff;border-radius:6px;
+  padding:2px 6px;font-size:12.5px;font-weight:700;width:110px;font-family:inherit}
+.teamBox .ttl .tin[readonly]{border-color:transparent;background:transparent}
+.teamBox .ttl .tc{width:11px;height:11px;border-radius:3px;display:inline-block;margin-left:6px;vertical-align:middle;border:1px solid #0006}
+.teamBox .trow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;
+  padding-bottom:6px;border-bottom:1px dashed #17202f;font-size:11.5px}
+.teamBox .trow .lab{color:#8ea3c0}
+.sel{background:#0a1020;border:1px solid #2a3a55;color:#eaf3ff;border-radius:6px;padding:3px 5px;font-size:11.5px;font-family:inherit}
+.colin{width:30px;height:22px;padding:0;border:1px solid #2a3a55;background:#0a1020;border-radius:5px}
+.rrow{display:grid;grid-template-columns:104px 1fr;gap:8px;align-items:center;padding:4px 0;border-top:1px dashed #17202f}
+.rrow:first-of-type{border-top:none}
+.rinfo{font-size:11.5px;line-height:1.45}
+.rinfo .nm{font-weight:700;color:#e7f0ff}
+.rinfo .st{color:#7d90ab}
+.tiles{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+.tile{width:18px;height:18px;border-radius:4px;border:1px solid #2c3a52;background:#111a29;color:#8ea3c0;
+  font-size:10.5px;font-family:ui-monospace,monospace;display:flex;align-items:center;justify-content:center;padding:0}
+.tile:hover{border-color:#4d6a96;color:#dbe6f5}
+.tile.zero{width:24px}
+.tile.lit{color:#0b1220;font-weight:700;border-color:#fff3}
+.hint{color:#7d90ab;font-size:11.5px;line-height:1.65}
+.step{display:flex;gap:4px;align-items:center;margin-left:2px}
+.step button{width:21px;height:21px;border-radius:6px;border:1px solid #2c3a52;background:#111a29;color:#dbe6f5;font-size:13px;line-height:1}
+.numin{width:46px;background:#0a1020;border:1px solid #2a3a55;color:#eaf3ff;border-radius:6px;padding:3px 5px;
+  font-family:ui-monospace,monospace;font-size:12px;text-align:center}
+.numin:focus{outline:none;border-color:#4ecb79}
+.bad{border-color:#c05555!important}
+.preview{margin-top:8px;background:#0a1020;border:1px dashed #26364f;border-radius:10px;padding:7px 10px;font-size:12px;line-height:1.9}
+.preview .chip{display:inline-flex;align-items:center;gap:4px;margin:0 8px 0 0;white-space:nowrap}
+table.stats{width:100%;border-collapse:collapse;font-size:12px}
+table.stats th,table.stats td{border-bottom:1px solid #1a2438;padding:5px 7px;text-align:left;vertical-align:top}
+table.stats th{color:#9db1cc;font-weight:600;background:#0f1725;position:sticky;top:0}
+table.stats tr:hover td{background:#111a29}
+table.stats input.numin{width:58px}
+table.stats td.k{font-weight:700;color:#eaf3ff;white-space:nowrap}
+.edwrap{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(210px,1fr);gap:12px;align-items:start}
+@media(max-width:920px){.edwrap{grid-template-columns:1fr}}
+.edwrap canvas{background:#06090f;border:1px solid #22304a;border-radius:10px;width:100%;height:auto;cursor:crosshair}
+.col{display:flex;flex-direction:column;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;border:1px solid #0006;display:inline-block}
+.msg{margin-top:7px;font-size:12px;line-height:1.7}
+.msg.err{color:#ff9a8a}.msg.ok{color:#7dffa8}
+.foot{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:11px;flex-wrap:wrap}
+.legend{font-size:11.5px;color:#8ea3c0;line-height:1.65}
+.res{font-size:12.5px;line-height:1.8}
+.res .big{font-size:24px;font-weight:800;letter-spacing:2px;margin-bottom:3px}
+.res .big.h{color:#7dffa8}.res .big.z{color:#ff9a8a}.res .big.draw{color:#ffd84d}
+.hidden{display:none!important}
+.kbd{font-family:ui-monospace,monospace;background:#111a29;border:1px solid #2c3a52;border-radius:4px;
+  padding:0 5px;font-size:11px;color:#cfe0f5}
+.sw-t{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#cfe0f5;cursor:pointer;user-select:none}
+.sw-t input{accent-color:#4ecb79}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.range{width:120px;accent-color:#4ecb79;height:18px;cursor:pointer}
+#btnExitFull{position:fixed;top:10px;right:12px;z-index:60;display:none}
+body.pfull #btnExitFull{display:inline-block}
+body.pfull{padding:0;background:#04070d}
+body.pfull .app{padding:0;gap:0}
+body.pfull header{display:none!important}
+body.pfull .bar{display:none!important}
+body.pfull .stage{border-radius:0;border:none;box-shadow:none}
+</style>
+</head>
+<body>
+<!-- ═══════════ 标题屏 ═══════════
+     进入游戏先看到「__GAME_FULL_TITLE__」的标题屏，再进入配置/调试界面。
+     设计上只保留：标题、副标题、两个入口按钮、一行极简说明。 -->
+<div class="titlescreen" id="titleScreen">
+  <div class="ts-inner">
+    <div class="ts-kicker">FUSION PROJECT</div>
+    <h1 class="ts-title">__BRAND__<span>·</span>__GAME_NAME__</h1>
+    <div class="ts-sub">__GAME_TAGLINE__</div>
+    <div class="ts-actions">
+      <button class="btn go big" id="btnEnterConfig">开始配置</button>
+      <button class="btn big" id="btnQuickPlay">快速开战</button>
+    </div>
+    <div class="ts-note">圆点 = 人类　方块 = 僵尸　实心 = 墙　半透明 = 窗 / 门</div>
+    <div class="ts-foot">左键框选 · 右键派遣 · 空格暂停 · S 调速 · R 重打 · E 配置</div>
+    <div class="ts-ver" id="tsVersion"></div>
+  </div>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <header>
+    <h1>__BRAND__ <span>· __GAME_NAME__</span></h1>
+    <div class="tagline">圆点 = 人类　方块 = 僵尸　实心 = 墙　半透明 = 窗 / 门</div>
+  </header>
+
+  <div class="arena" id="arena">
+
+    <!-- 左栏：队伍构成 + 战报流水（原来压在地图上的两块） -->
+    <aside class="rail left">
+      <div class="card2">
+        <div class="ct"><span>队伍构成</span></div>
+        <div id="teamChips"></div>
+      </div>
+      <div class="card2" style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column">
+        <div class="ct"><span>战报</span></div>
+        <div id="feed" style="overflow:hidden auto;flex:1 1 auto"></div>
+      </div>
+    </aside>
+
+    <div class="stage" id="stage">
+      <canvas id="game" width="1280" height="704"></canvas>
+
+      <!-- 地图上只留时间；其余指标全部移到右栏，确保不遮挡战场 -->
+      <div class="hud">
+        <div class="pill time" id="timePill">04:00</div>
+        <div class="pill" id="speedPill">1×</div>
+        <div class="pill i" id="infPill">感染 <b id="infN">0</b></div>
+      </div>
+
+      <div class="overlay" id="setup">
+      <div class="card">
+        <!-- ═══ 模式切换：常规对战 / 撤离任务 ═══
+             两种模式的「目标、地图来源、队伍规则」完全不同，
+             所以提到最顶层做切换，而不是藏在一个页签里。
+             切换模式会相应显示/隐藏不适用的页签。 -->
+        <div class="modebar">
+          <button class="modebtn on" data-mode="normal">
+            <b>常规对战</b><span>双方自由编队，全歼对手</span>
+          </button>
+          <button class="modebtn" data-mode="mission">
+            <b>撤离任务</b><span>带平民撤到撤离区，僵尸从远端涌入</span>
+          </button>
+          <button class="modebtn" data-mode="budget">
+            <b>预算模式</b><span>预知地图与敌军规模，用预算组建队伍</span>
+          </button>
+        </div>
+
+        <!-- ═══ 页签可见性规则 ═══
+             撤离 / 预算 模式是**封闭玩法**：队伍编制、行为、数值、轮次
+             都由该模式的规则决定，不该让玩家再去动标准模式的那套改动系统。
+             所以这几个页签加 .ntab（normal-only），切到其它模式时隐藏。
+             地图页保留（两个模式都要选图），角色图鉴也保留（纯查阅）。 -->
+        <div class="tabs">
+          <button class="tab ntab active" data-tab="lineup">① 队伍与阵容</button>
+          <button class="tab ntab" data-tab="behavior">② 行为预设</button>
+          <button class="tab ntab" data-tab="stats">③ 数值调整</button>
+          <button class="tab ntab" data-tab="waves">④ 僵尸轮次</button>
+          <button class="tab" data-tab="map">⑤ 地图</button>
+          <button class="tab mtab" data-tab="mission">⑥ 撤离设置</button>
+          <button class="tab btab" data-tab="budget">⑥ 预算编队</button>
+          <button class="tab" data-tab="guide">⑦ 角色图鉴</button>
+          <button class="tab" data-tab="about">⑧ 关于</button>
+        </div>
+
+        <div class="pane on" id="pane-lineup">
+          <div class="row" style="margin-bottom:8px">
+            <button class="btn" id="btnAddTeam">＋ 添加队伍</button>
+            <label class="sw-t"><input type="checkbox" id="chkReload"/> 换弹时间</label>
+            <label class="sw-t"><input type="checkbox" id="chkSfx" checked/> 动作音效</label>
+            <label class="sw-t"><input type="checkbox" id="chkMusic" checked/> 背景音乐</label>
+            <span class="hint">全部角色始终可用；最多 6 支队伍，单位上的数字即队伍编号。</span>
+          </div>
+          <!-- 音乐设置：内置三条音轨 + 从本机选一个当背景乐 -->
+          <div class="hint" style="margin:6px 0 4px">背景音乐</div>
+          <div class="tiles" style="margin-bottom:6px">
+            <button class="btn msc on" data-music="music_calm">氛围</button>
+            <button class="btn msc" data-music="music_tense">紧张</button>
+            <button class="btn msc" data-music="music_wind">荒凉</button>
+            <label class="btn" style="cursor:pointer">自定义音乐…
+              <input type="file" id="musicFile" accept="audio/*" style="display:none"/>
+            </label>
+            <span class="hint" style="margin-left:6px">音量</span>
+            <input class="range" type="range" id="musicVol" min="0" max="100" value="32"/>
+          </div>
+          <div class="legend" id="musicMsg">选内置曲目或从本机选一个音频文件（不上传）</div>
+          <div class="hint" style="margin-bottom:8px">
+            各队互相攻击。人类被咬后 <b id="infectShow">3</b> 秒尸变倒戈。
+          </div>
+          <div class="teamList" id="teamList"></div>
+          <div class="preview" id="preview"></div>
+          <div class="hint" style="margin-top:8px">点方块或填数字，上限 999。</div>
+        </div>
+
+        <div class="pane" id="pane-behavior">
+          <div class="hint" style="margin-bottom:8px">
+            先<b>左键框选</b>再点按钮可只改这批人；<b>右键点地面</b>派遣。
+          </div>
+          <div class="row">
+            <span class="lab" style="color:#8ea3c0;font-size:12px">默认预设</span>
+            <button class="btn beh on" data-beh="free">自由行动</button>
+            <button class="btn beh" data-beh="skirmish">游击</button>
+            <button class="btn beh" data-beh="push">主动出击</button>
+            <button class="btn beh" data-beh="hold">坚守</button>
+          </div>
+          <table class="stats" style="margin-top:6px">
+            <thead><tr><th>预设</th><th>行为</th></tr></thead>
+            <tbody>
+              <tr><td class="k">自由行动</td><td>按态势自选：劣势躲掩体、优势压上。</td></tr>
+              <tr><td class="k">游击</td><td>专找掩体，隔窗射击，逼近就换位。</td></tr>
+              <tr><td class="k">主动出击</td><td>一路压上，交手距离最近。</td></tr>
+              <tr><td class="k">坚守</td><td>识别易守位置，收拢布防，不追击。</td></tr>
+            </tbody>
+          </table>
+          <div class="hint" style="margin-top:8px">
+            底层本能：僵尸进 <b id="panicShow">70</b> px 就后撤；附近有同伴才靠拢；被感染者找医疗兵。
+          </div>
+        </div>
+
+        <div class="pane" id="pane-stats">
+          <div class="row">
+            <button class="btn" id="btnStatReset">恢复默认数值</button>
+            <span class="hint">改完立即生效。</span>
+          </div>
+          <table class="stats" id="statTable"></table>
+          <div class="hint" style="margin-top:8px">
+            生命 / 移速 / 伤害 / 间隔 / 射程 / 弹匣 / 换弹。霰弹伤害为单发弹丸值。
+          </div>
+        </div>
+
+        <div class="pane" id="pane-waves">
+          <div class="row" style="margin-bottom:8px">
+            <label class="sw-t"><input type="checkbox" id="chkWave"/> 开启僵尸轮次</label>
+            <button class="btn" id="btnWaveAdd">＋ 添加一波</button>
+            <button class="btn" id="btnWaveReset">恢复默认波次</button>
+          </div>
+          <div class="hint" style="margin-bottom:8px">
+            每波单独设数量与间隔。开启后僵尸由波次决定出场。
+          </div>
+          <div id="waveList"></div>
+          <div class="preview" id="wavePreview"></div>
+        </div>
+
+        <div class="pane" id="pane-map">
+          <div class="edwrap">
+            <div>
+              <canvas id="editor" width="800" height="440"></canvas>
+              <div class="hint" style="margin-top:6px">左键绘制；右键擦除。</div>
+            </div>
+            <div class="col">
+              <div class="hint">尺寸</div>
+              <div class="tiles">
+                <button class="btn msz" data-msize="small">小 28×16</button>
+                <button class="btn msz on" data-msize="medium">中 40×22</button>
+                <button class="btn msz" data-msize="large">大 56×30</button>
+                <button class="btn msz" data-msize="huge">超大 72×40</button>
+              </div>
+              <div class="hint">画笔</div>
+              <div class="tiles">
+                <button class="btn tool on" data-tool="1"><i class="sw" style="background:#2f3d55"></i>墙</button>
+                <button class="btn tool" data-tool="2"><i class="sw" style="background:#6fc8ff"></i>窗</button>
+                <button class="btn tool" data-tool="3"><i class="sw" style="background:#ffbe5c"></i>门</button>
+                <button class="btn tool" data-tool="0"><i class="sw" style="background:#101822"></i>擦除</button>
+              </div>
+              <div class="hint">镜像</div>
+              <div class="tiles">
+                <button class="btn mir on" data-mir="0">关</button>
+                <button class="btn mir" data-mir="1">左右</button>
+                <button class="btn mir" data-mir="2">四向</button>
+              </div>
+              <div class="hint">预设出生点（左键放 / 右键删）</div>
+              <div class="tiles">
+                <button class="btn spw on" data-spawn="none">关闭</button>
+                <button class="btn spw" data-spawn="team">队伍出生点</button>
+                <button class="btn spw" data-spawn="spawner">僵尸刷怪点</button>
+              </div>
+              <div class="row" style="margin:2px 0 4px">
+                <span class="hint">归属队伍</span>
+                <input class="numin" type="number" id="spawnTeamIn" min="1" max="6" value="1"/>
+                <button class="btn" id="btnSpawnClear">清空出生点</button>
+              </div>
+              <div class="hint">预设地图（点击切换，右侧显示结构预览）</div>
+              <div class="tiles">
+                <button class="btn pre" data-preset="open">开阔平原</button>
+                <button class="btn pre" data-preset="balanced">均衡街区</button>
+                <button class="btn pre" data-preset="urban">巷战废墟</button>
+                <button class="btn pre" data-preset="fort">中央要塞</button>
+              </div>
+              <div class="tiles">
+                <button class="btn pre" data-preset="mission1">城市街区</button>
+                <button class="btn pre" data-preset="mission2">市中心</button>
+                <button class="btn pre" data-preset="mission3">老城巷道</button>
+                <button class="btn pre" data-preset="mission4">近郊平房</button>
+              </div>
+              <div class="legend" id="mapTraits"></div>
+              <div class="tiles">
+                <button class="btn" id="btnResetMap">重置</button>
+                <button class="btn" id="btnRandom">随机</button>
+                <button class="btn" id="btnClear">清空</button>
+                <button class="btn warm" id="btnCarve">打通通道</button>
+                <button class="btn" id="btnAudit">体检</button>
+              </div>
+              <!-- 地图保存 / 加载 -->
+              <div class="hint">我的地图（保存在本机浏览器，可导出文件带走）</div>
+              <div class="row" style="margin:2px 0 4px">
+                <input class="txtin" type="text" id="mapSaveName" placeholder="给地图起个名字" maxlength="24"/>
+                <button class="btn go" id="btnMapSave">保存</button>
+              </div>
+              <div class="tiles" style="margin-bottom:6px">
+                <button class="btn" id="btnMapExport">导出文件</button>
+                <button class="btn" id="btnMapImport">导入文件</button>
+                <button class="btn" id="btnMapShare">生成分享码</button>
+                <input type="file" id="mapFileIn" accept=".json" style="display:none"/>
+              </div>
+              <div class="row" style="margin:0 0 6px">
+                <input class="txtin" type="text" id="mapCodeIn" placeholder="粘贴别人的分享码后点「导入分享码」"/>
+                <button class="btn" id="btnMapCodeIn">导入分享码</button>
+              </div>
+              <div id="savedMapList" class="savedmaps"></div>
+              <div class="row" style="margin:2px 0 4px">
+                <input class="txtin" type="text" id="mapCodeOut" placeholder="分享码会显示在这里" readonly/>
+                <button class="btn" id="btnMapCodeCopy">复制</button>
+              </div>
+              <div class="legend" id="mapSaveMsg"></div>
+              <div class="legend" id="mapAuditMsg"></div>
+              <div class="legend" id="mapMsg"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 撤离模式：独立一个面板，含专用预设地图 -->
+        <div class="pane" id="pane-mission">
+          <div class="hint" style="margin-bottom:8px">
+            带平民撤到<b style="color:#7dffa8">左侧撤离区</b>。平民会被僵尸感染。
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <label class="sw-t"><input type="checkbox" id="chkMission"/> 开启</label>
+            <span class="hint">平民</span>
+            <input class="numin" type="number" id="civCount" min="1" max="60" value="8"/>
+            <span class="hint">人</span>
+          </div>
+          <!-- 撤离模式的人类队伍可以自由编辑，与「队伍与阵容」页共用配置 -->
+          <div class="hint">救援队阵容（与「队伍与阵容」页共用，改了立即生效）</div>
+          <div class="tiles" style="margin-bottom:8px">
+            <button class="btn" id="btnMissionLoadout">默认救援编制</button>
+            <button class="btn" id="btnMissionHeavy">重装强攻</button>
+            <button class="btn" id="btnMissionSneak">轻装快反</button>
+          </div>
+          <div class="legend" id="missionLoadoutMsg"></div>
+          <div class="hint">任务地图（迷宫型，点击切换）</div>
+          <div class="tiles" style="margin-bottom:8px">
+            <button class="btn mis" data-mission="corridor">地下管网</button>
+            <button class="btn mis" data-mission="compound">废弃医院</button>
+            <button class="btn mis" data-mission="island">老城迷巷</button>
+            <button class="btn mis" data-mission="blitz">断壁残垣</button>
+          </div>
+          <div class="tiles" style="margin-bottom:8px">
+            <button class="btn" id="btnMissionUseEdit">用当前地图（自定义）</button>
+            <button class="btn" id="btnMissionPickZone">重设撤离区</button>
+          </div>
+          <!-- 地图浏览：把选中的任务地图画出来，含撤离区 / 平民 / 僵尸入口 -->
+          <div class="mapview">
+            <canvas id="mapView" width="640" height="360"></canvas>
+          </div>
+          <div class="legend" id="mapViewInfo">选择一张任务地图以查看预览</div>
+          <div class="hint" style="margin-top:8px">刷怪点</div>
+          <div class="tiles" style="margin-bottom:8px">
+            <button class="btn" id="btnSpawnOn">开启</button>
+            <button class="btn" id="btnSpawnOff">关闭</button>
+            <button class="btn go" id="btnAutoWave">按人类实力放一波</button>
+          </div>
+          <div class="row" style="margin-bottom:6px">
+            <span class="hint">难度</span>
+            <input class="range" type="range" id="waveDiff" min="50" max="200" value="100"/>
+            <span class="hint" id="waveDiffShow">1.0×</span>
+          </div>
+          <div class="legend" id="autoWaveMsg"></div>
+          <div class="legend" id="missionMsg"></div>
+        </div>
+
+        <div class="pane" id="pane-budget">
+          <div class="hint" style="margin-bottom:8px">
+            你<b>预先知道地图和敌军总规模</b>（数量 / 波数），但看不到具体兵种。
+            用一笔预算组建队伍 —— 花完为止，具体编成靠局内侦查。
+          </div>
+          <div class="hint">① 选择难度档（决定预算与敌军规模）</div>
+          <div class="tiles" id="budgetPresets" style="margin-bottom:10px"></div>
+          <div class="hint">② 选择战场地图（与难度独立，自由组合）</div>
+          <div class="tiles" id="budgetMaps" style="margin-bottom:8px"></div>
+          <div class="row" style="margin-bottom:6px">
+            <span class="hint">预算</span><b id="bgBudget" style="color:#ffd84d">—</b>
+            <span class="hint">已花</span><b id="bgSpent" style="color:#8fd0ff">—</b>
+            <span class="hint">剩余</span><b id="bgLeft" style="color:#7dffa8">—</b>
+            <span class="hint">人数</span><b id="bgCount">—</b>
+          </div>
+          <div class="row" style="margin-bottom:6px">
+            <button class="btn go" id="btnBudgetSuggest">用算法配一队</button>
+            <button class="btn warm" id="btnBudgetClear">清空重配</button>
+            <button class="btn" id="btnBudgetApply">确认开局</button>
+          </div>
+          <div class="hint">兵种价格（点 ＋ / － 手动调整）</div>
+          <div id="budgetShop" class="shop"></div>
+          <div class="legend" id="budgetMsg"></div>
+          <div class="hint" style="margin-top:8px">敌军情报（仅规模可见）</div>
+          <div class="legend" id="budgetIntel"></div>
+          <!-- 预算模式的地图浏览：知道要打哪张图，才能针对性配队 -->
+          <div class="hint" style="margin-top:8px">战场地图</div>
+          <div class="mapview" style="max-width:560px;margin:0 auto 6px">
+            <canvas id="budgetMapView" width="560" height="320"></canvas>
+          </div>
+          <div class="legend" id="budgetMapInfo"></div>
+        </div>
+
+        <!-- 关于 / 鸣谢：分发必需（授权署名 + 版本 + 官网入口） -->
+        <div class="pane" id="pane-about">
+          <div class="abouthead">
+            <div class="ts-kicker">__BRAND__</div>
+            <h2 class="aboutname">__GAME_NAME__</h2>
+            <div class="aboutver" id="aboutVer">__GAME_VERSION__</div>
+          </div>
+          <table class="stats">
+            <tbody>
+              <tr><td class="k">类型</td><td>自动战斗模拟器 · 单文件离线网页</td></tr>
+              <tr><td class="k">授权</td><td>__GAME_LICENSE__（非商业 · 署名 · 相同方式共享）</td></tr>
+              <tr><td class="k">版权</td><td>__GAME_YEAR__ __BRAND__</td></tr>
+            </tbody>
+          </table>
+
+          <div class="hint" style="margin-top:10px">聚变计划</div>
+          <div class="legend">
+            本作是「聚变计划」企划的一部分。该企划是一个创作汇总项目，
+            涵盖小说、视频与游戏等多个方向。
+            <span id="aboutSiteWrap">　官网：<a id="aboutSite" target="_blank" rel="noopener"></a></span>
+            <span id="aboutRepoWrap">　源码：<a id="aboutRepo" target="_blank" rel="noopener"></a></span>
+          </div>
+
+          <div class="hint" style="margin-top:10px">鸣谢 · 音效素材</div>
+          <div class="legend">
+            本作音效均为真实录音采样（仅做裁剪 / 降采样 / 归一化，无音色合成），
+            来源与授权：
+            <br>· Prepared SFX Library（<b>CC0</b>）— 各兵种专属枪声
+            <br>· Q009（<b>CC BY-SA 3.0</b>）— 手雷、换弹、空仓、连发
+            <br>· Red Eclipse（<b>CC BY-SA 3.0</b>）— 喷火器、RPG、榴弹、爆炸
+            <br>· Zombie / Monster Voice Packs（<b>CC0</b>）— 僵尸嚎叫与阵亡
+            <br>· Wikimedia Commons（<b>CC BY-SA</b>）— 部分枪声与爆炸
+            <br><br>本作不包含任何来自商业游戏的素材。
+          </div>
+
+          <div class="hint" style="margin-top:10px">地图分享</div>
+          <div class="legend">
+            自制地图可以保存、导出文件，或生成<b>分享码</b>贴给别人。
+            在「⑤ 地图」页操作。
+          </div>
+        </div>
+
+        <div class="pane" id="pane-guide">
+          <table class="stats" id="guideTable"></table>
+          <div class="hint" style="margin-top:8px">
+            人类：会被感染、推门即过。僵尸：近战感染、需撞门。
+          </div>
+        </div>
+
+        <div class="foot">
+          <div class="legend">圆点 = 人类　方块 = 僵尸　按 <span class="kbd">N</span> 显示编号</div>
+          <div class="tiles">
+            <button class="btn" id="btnRndAll">随机双方</button>
+            <button class="btn" id="btnBase">基础阵容</button>
+            <button class="btn go" id="btnStart">开始对战</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="result">
+      <div class="card" style="max-width:780px">
+        <h2>战报</h2>
+        <div class="res" id="resBody"></div>
+        <div class="foot">
+          <div class="legend" id="resNote"></div>
+          <div class="tiles">
+            <button class="btn" id="btnBackSetup">调整配置</button>
+            <button class="btn go" id="btnAgain">同配置再战</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- 右栏：战况面板（兵种计数 / 双方人数 / 对向血条 / Boss 血条）+ 指标 -->
+    <aside class="rail right">
+      <div class="card2">
+        <div class="ct"><span>战况</span><span id="modeMini" style="color:#8fd0ff"></span></div>
+        <div class="wb-row" id="wbClasses" style="justify-content:flex-start"></div>
+        <div class="wb-main">
+          <div class="wb-side">
+            <span class="wb-lab" id="wbLabA">人类</span>
+            <b class="wb-num" id="wbNumA">0</b>
+          </div>
+        </div>
+        <div class="wb-bar"><i class="wb-fillA" id="wbFillA"></i><i class="wb-fillB" id="wbFillB"></i></div>
+        <div class="wb-main" style="margin:5px 0 0;justify-content:flex-end">
+          <div class="wb-side right">
+            <b class="wb-num" id="wbNumB">0</b>
+            <span class="wb-lab" id="wbLabB">僵尸</span>
+          </div>
+        </div>
+        <div class="wb-boss" id="wbBoss"></div>
+      </div>
+      <div class="card2">
+        <div class="ct"><span>指挥</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;color:#9db1cc;font-size:11.5px">
+          <div>预设：<b id="modeName" style="color:#8fd0ff">自由行动</b></div>
+          <div>已选：<b id="selN" style="color:#eaf2ff">0</b> 个单位</div>
+          <div id="missionBox" class="hidden" style="border-top:1px solid #1c2a40;padding-top:5px;margin-top:2px">
+            <div style="color:#ffd84d;font-weight:700" id="missionTitle">撤离任务</div>
+            <div id="missionBody" style="color:#c9d8e8;margin-top:3px"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="bar">
+    <button class="btn" id="btnPause">暂停 <span class="kbd">空格</span></button>
+    <button class="btn" id="btnSpeed">速度 1× <span class="kbd">S</span></button>
+    <button class="btn" id="btnRestart">重打 <span class="kbd">R</span></button>
+    <span class="sep"></span>
+    <span class="hint" style="color:#8ea3c0">左键框选 · 右键派遣</span>
+    <button class="btn behq" data-beh="free">自由</button>
+    <button class="btn behq" data-beh="skirmish">游击</button>
+    <button class="btn behq" data-beh="push">出击</button>
+    <button class="btn behq" data-beh="hold">坚守</button>
+    <button class="btn" id="btnSelAll">全选</button>
+    <button class="btn" id="btnSelNone">取消选择</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnNums">显示编号：关</button>
+    <button class="btn on" id="btnLock" title="关闭后，画布上的左右点击不再改变选派，防止误触（L）">点击指挥：开</button>
+    <button class="btn" id="btnSetup">队伍/地图 <span class="kbd">E</span></button>
+    <button class="btn" id="btnFull">全屏 <span class="kbd">F</span></button>
+  </div>
+</div>
+<button class="btn" id="btnExitFull">退出全屏（Esc）</button>
+
+<script>
