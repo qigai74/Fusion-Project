@@ -985,14 +985,34 @@ sec('AB. 撤离模式与正式游戏的共存');
   for (const r of rows) if (r.indexOf('#') < 0 && r.indexOf('=') < 0) fullOpen++;
   check('没有整行贯通的空白（不是田字格）', fullOpen === 0, 'fullOpen=' + fullOpen);
 
-  /* ② 左右不对称度要够高（镜像对称会把路拉直） */
-  let asym = 0, tot = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    tot++;
-    if (rows[y][x] !== rows[y][W - 1 - x]) asym++;
+  /* ② ★ 断言重写：地图改为**手工搭建**后，左右接近对称是「公平性」的
+     有意设计（两队地形对等），旧的「必须不对称 ≥20%」前提不再成立。
+     现在验证的是巷战图的真正特征：**密集短墙、转角多** ——
+     数独立墙体簇，urban 应该远多于开阔图（转角多 = 视线碎 = 近战主场）。 */
+  function clusters(map) {
+    const seen = new Set();
+    let n = 0;
+    for (let y = 0; y < map.length; y++) {
+      for (let x = 0; x < map[0].length; x++) {
+        if (map[y][x] !== '#' || seen.has(y * W + x)) continue;
+        n++;
+        const q = [[x, y]];
+        while (q.length) {
+          const [cx, cy] = q.pop();
+          if (cx < 0 || cx >= W || cy < 0 || cy >= map.length) continue;
+          if (map[cy][cx] !== '#' || seen.has(cy * W + cx)) continue;
+          seen.add(cy * W + cx);
+          q.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+        }
+      }
+    }
+    return n;
   }
-  const pct = asym / tot * 100;
-  check('道路左右不再镜像对称（更崎岖）', pct >= 20, pct.toFixed(1) + '%');
+  const urbanC = clusters(rows);
+  const openC = clusters(QB.previewMap('open'));
+  check('巷战图短墙密集（墙体簇远多于开阔图）',
+        urbanC > openC * 2 && urbanC >= 15,
+        'urban=' + urbanC + ' open=' + openC);
 }
 
 /* --- 撤离地图必须是迷宫型 --- */
