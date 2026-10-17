@@ -302,14 +302,22 @@ body.pfull .stage{border-radius:0;border:none;box-shadow:none}
              两种模式的「目标、地图来源、队伍规则」完全不同，
              所以提到最顶层做切换，而不是藏在一个页签里。
              切换模式会相应显示/隐藏不适用的页签。 -->
-        <!-- ═══ 模式入口 ═══
-             ★ 用户要求：常规模式里不要再出现「预算 / 撤离」按钮。
-             所以顶部只留一个「常规对战」标识，两个特殊玩法各自做成
-             独立页签（⑥ 撤离设置 / ⑥ 预算编队），点进去才进入那个玩法。
-             好处：常规配置界面干净，不会被三种模式的规则混在一起干扰。 -->
+        <!-- ═══ 模式切换：常规对战 / 撤离任务 / 预算模式 ═══
+             三种模式的「目标、地图来源、队伍规则」完全不同，
+             所以提到最顶层做切换。切换模式会相应显示/隐藏不适用的页签。
+             ★ 常规模式是开放编辑：它的 ①~④ 页签（队伍/行为/数值/轮次）
+               只属于常规对战。撤离（mtab）和预算（btab）页签是那两个
+               模式的专属入口，在常规模式下隐藏 —— 这样常规配置界面干净，
+               不会被其它模式的规则混在一起。 -->
         <div class="modebar">
           <button class="modebtn on" data-mode="normal">
             <b>常规对战</b><span>双方自由编队，全歼对手</span>
+          </button>
+          <button class="modebtn" data-mode="mission">
+            <b>撤离任务</b><span>带平民撤到撤离区，僵尸从远端涌入</span>
+          </button>
+          <button class="modebtn" data-mode="budget">
+            <b>预算模式</b><span>预知地图与敌军规模，用预算组建队伍</span>
           </button>
         </div>
 
@@ -453,12 +461,9 @@ body.pfull .stage{border-radius:0;border:none;box-shadow:none}
                 <button class="btn pre" data-preset="urban">巷战废墟</button>
                 <button class="btn pre" data-preset="fort">中央要塞</button>
               </div>
-              <div class="tiles">
-                <button class="btn pre" data-preset="mission1">城市街区</button>
-                <button class="btn pre" data-preset="mission2">市中心</button>
-                <button class="btn pre" data-preset="mission3">老城巷道</button>
-                <button class="btn pre" data-preset="mission4">近郊平房</button>
-              </div>
+              <!-- ★ 常规模式不再显示撤离地图预设按钮（mission1~4 属于撤离模式）。
+                  那四张是撤离任务的专属地图，出现在常规模式里会让玩家误选、
+                  且与常规模式的「全歼对手」目标不符。要玩撤离图请切到「撤离任务」模式。 -->
               <div class="legend" id="mapTraits"></div>
               <div class="tiles">
                 <button class="btn" id="btnResetMap">重置</button>

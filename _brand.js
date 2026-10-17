@@ -21,7 +21,7 @@ module.exports = {
   NAME:    '圆方战记',
   SUB:     '自动战斗模拟器',
   TAGLINE: '自动战斗模拟器 · 单文件零依赖',
-  VERSION: 'v1.0.0',
+  VERSION: 'v1.0.1',
 
   SITE:    '',            // 例：'https://fusion.example.com'（留空则不显示入口）
   REPO:    '',            // 例：'https://github.com/you/fusion-arena'

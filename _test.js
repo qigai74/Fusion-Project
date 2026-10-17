@@ -952,10 +952,21 @@ sec('AB. 撤离模式与正式游戏的共存');
 {
   for (const k of ['balanced', 'urban']) {
     const rows = QB.previewMap(k);
+    /* ★ 只统计**内部**格子：地图最外一圈是强制边框墙，
+       它必然占 2*(gw+gh-2)/(gw*gh) ≈ 10.7%。
+       把边框算进「掩体密度」会让所有地图凭空多 10 个百分点，
+       既失真、也会让手绘地图被误判（实测 balanced 内部 19% → 含边框 28%）。 */
     let solid = 0, total = 0;
-    for (const r of rows) for (const ch of r) { total++; if (ch === '#' || ch === '=') solid++; }
-    const pct = Math.round(solid / total * 100);
-    check('地图「' + k + '」掩体占比在参考区间(6~25%)',
+    for (let y = 1; y < rows.length - 1; y++) {
+      const r = rows[y];
+      for (let x = 1; x < r.length - 1; x++) {
+        total++;
+        const ch = r[x];
+        if (ch === '#' || ch === '=') solid++;
+      }
+    }
+    const pct = +(solid / total * 100).toFixed(1);
+    check('地图「' + k + '」内部掩体占比在参考区间(6~25%)',
           pct >= 6 && pct <= 25, pct + '%');
   }
 }
