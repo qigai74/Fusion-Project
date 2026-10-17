@@ -70,6 +70,14 @@ input,textarea,select{-webkit-user-select:text;user-select:text}
 .aboutver{color:#6f84a1;font-size:12px;margin-top:4px;letter-spacing:1px}
 #pane-about a{color:#8fd0ff;text-decoration:none}
 #pane-about a:hover{text-decoration:underline}
+/* ═══ 反馈邮箱 ═══ */
+.feedback{display:flex;align-items:center;gap:10px;margin:6px 0 2px;flex-wrap:wrap}
+.feedback a{color:#7dffa8 !important;font-size:14px;font-weight:700;letter-spacing:.3px;
+  padding:5px 10px;border:1px solid #2b5c3c;border-radius:7px;background:#10201a;
+  text-decoration:none}
+.feedback a:hover{background:#163024;border-color:#5ee07a}
+.feedback button{padding:4px 10px;font-size:11.5px}
+.fbmsg{font-size:11.5px;color:#7dffa8;margin-left:4px}
 /* 地图浏览：把地图按比例画进一个固定高度的框里，保持像素感 */
 .mapview{margin:0 0 6px;border:1px solid #1c2a40;border-radius:8px;background:#05080e;
   overflow:hidden;display:flex;justify-content:center}
@@ -610,6 +618,23 @@ body.pfull .stage{border-radius:0;border:none;box-shadow:none}
           <div class="legend">
             自制地图可以保存、导出文件，或生成<b>分享码</b>贴给别人。
             在「⑤ 地图」页操作。
+          </div>
+
+          <!-- 反馈渠道：玩家遇到 bug / 有建议可以直接发邮件 -->
+          <div class="hint" style="margin-top:10px">反馈与建议</div>
+          <div class="legend">
+            遇到 bug、想提建议、或做了好玩的地图想分享，都可以发邮件：
+            <div class="feedback">
+              <a id="feedbackMail" href="mailto:__GAME_CONTACT__">__GAME_CONTACT__</a>
+              <button class="btn" id="btnCopyMail">复制邮箱</button>
+            </div>
+            <span id="feedbackMsg" class="fbmsg"></span>
+            <br>
+            <span style="color:#6f84a1">
+              发邮件时如果能附上：<b>做了什么操作</b>、<b>期望的结果</b>、
+              <b>实际发生了什么</b> —— 会好定位很多。
+              如果是地图问题，把分享码一起贴上。
+            </span>
           </div>
         </div>
 

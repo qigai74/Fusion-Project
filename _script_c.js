@@ -35,9 +35,15 @@ function updateHUD(dt){
   }
   const mn=$('#modeName'); if(mn) mn.textContent=mode;
   const mm2=$('#modeMini'); if(mm2) mm2.textContent=mode;
-  const left=Math.max(0,G.matchTime-G.time);
-  const mm=String(Math.floor(left/60)).padStart(2,'0'), ss=String(Math.floor(left%60)).padStart(2,'0');
-  const tp=$('#timePill'); tp.textContent=mm+':'+ss; tp.classList.toggle('low',left<=30);
+  /* ★ 计时器从「倒计时」改成「已用时」。
+     时间限制整个去掉了（用户要求：不要做会限制玩家体验的东西），
+     所以这里显示已经打了多久，而不是还剩多少 ——
+     既保留了「这局打了很久」的信息，又不会给人「快没时间了」的压迫感。 */
+  const el2=Math.floor(G.time);
+  const mm=String(Math.floor(el2/60)).padStart(2,'0');
+  const ss=String(el2%60).padStart(2,'0');
+  const tp=$('#timePill');
+  if(tp){ tp.textContent=mm+':'+ss; tp.classList.remove('low'); }
   $('#teamChips').innerHTML=teams.map((t,i)=>
     '<div class="sideblock" style="border-color:'+teamColor(i)+'44"><div class="hd" style="color:'+teamColor(i)+'">'+
     t.name+'</div><div class="chips">'+chipsFor(i)+'</div></div>').join('');
@@ -307,7 +313,7 @@ function startMatch(){  sfxResume();                                   // 开局
   for(let i=0;i<G.map.length;i++){ G.doorHP[i]=G.map[i]===DOOR?DOOR_MAX:0; G.winHP[i]=G.map[i]===WIN?WIN_MAX:0; }
   G.bullets=[]; G.parts=[]; G.corpses=[]; G.feed=[]; G.infections=0; G.converted=0;
   G.grenades=[]; G.shocks=[]; G.scorches=[]; G.jets=[];
-  G.time=0; G.tick=0; G.endT=0; G.result=null; G.matchTime=240; G.baseDirty=true; G.hudT=0;
+  G.time=0; G.tick=0; G.endT=0; G.result=null; G.baseDirty=true; G.hudT=0;
   G.selected=new Set(); G.dispatchMark=null;
   G.__mainRegion=null;
   if(!G.missionArea) G.missionArea=null;                 // 地图刚换 → 连通性缓存必须失效
@@ -1007,10 +1013,17 @@ function buildRandomMap(seed, style){
       if(t===WALL) wall++; else if(t===WIN) win++; else if(t===DOOR) door++;
     }
     const a=auditMap(g);
+    /* ★ 合格判据要跟着地图设计走。
+       现在是「稀疏掩体 + 开阔战场」，所以：
+         · 连通区门槛从 40% 提到 **55%** —— 地图本来就该大部分可走；
+           低于这个数说明掩体意外连成片把地图堵了。
+         · 开口（门+窗）只要 ≥3 —— 掩体稀疏的风格本来就少开口，
+           强求密度会把 `open` 这类极稀疏设计全部判失败。
+         · 出生区仍然要够宽（≥12 格可站）。 */
     const ok = a.ok &&
-               a.stats.mainSize >= GW*GH*0.40 &&
+               a.stats.mainSize >= GW*GH*0.55 &&
                a.stats.spawnFree >= 12 &&
-               (door+win) >= Math.max(10, Math.round(GW*GH/100*3));
+               (door+win) >= 3;
     if(ok) return g;
   }
   /* 兜底：明确告诉调用方「这次没生成出合格的图」，而不是假装成功 */
@@ -1033,6 +1046,14 @@ function randomMapReliability(n){
   return {runs:n, ok:ok, unique:seen.size, rate:+(ok/n).toFixed(3)};
 }
 
+/* 打通一条横贯通道。
+   ★ 旧版的问题：它挑「障碍最少的一行」然后把墙变成门 ——
+     如果地图本来就有畅通的行，它**什么都不做**，
+     玩家点了按钮看不到任何变化，以为按钮坏了。
+     现在改成：
+       ① 先看有没有「完全畅通」的行（无障碍）—— 有就直接告诉玩家不用打
+       ② 否则挑障碍最少的一行，把墙/窗换成门（真的凿穿）
+       ③ 返回 {y, carved, alreadyOpen} 供 UI 给出准确反馈 */
 function carvePassage(){
   let bestY=1, bestCost=1e9;
   for(let y=1;y<GH-1;y++){
@@ -1040,11 +1061,16 @@ function carvePassage(){
     for(let x=1;x<=GW-2;x++){ const t=editGrid[idx(x,y)]; if(t===WALL||t===WIN) c++; }
     if(c<bestCost){ bestCost=c; bestY=y; }
   }
+  /* 已经有畅通的行 → 不用凿 */
+  if(bestCost===0){
+    return {y:bestY, carved:0, alreadyOpen:true};
+  }
+  let carved=0;
   for(let x=1;x<=GW-2;x++){
     const t=editGrid[idx(x,bestY)];
-    if(t===WALL||t===WIN) editGrid[idx(x,bestY)]=DOOR;
+    if(t===WALL||t===WIN){ editGrid[idx(x,bestY)]=DOOR; carved++; }
   }
-  return bestY;
+  return {y:bestY, carved:carved, alreadyOpen:false};
 }
 
 /* ---------------- 队伍增删 ---------------- */
@@ -1306,9 +1332,13 @@ $('#btnRandom').addEventListener('click',()=>{
   setMsg('已生成随机对称地图'+(v.ok?'，可通行检查通过':'：'+v.reason), v.ok?'ok':'err');
 });
 $('#btnCarve').addEventListener('click',()=>{
-  carvePassage(); drawEditor();
+  const r=carvePassage(); drawEditor();
   const v=validateGrid(editGrid);
-  setMsg(v.ok?'已打通一条横贯通道，现在可以开战了':'仍未打通：'+v.reason, v.ok?'ok':'err');
+  if(r.alreadyOpen){
+    setMsg('第 '+(r.y+1)+' 行本来就是通的，无需打凿。地图已可通行'+(v.ok?'':'（'+v.reason+'）'), 'ok');
+  } else {
+    setMsg('已在第 '+(r.y+1)+' 行凿穿 '+r.carved+' 处障碍，现在可以开战了', v.ok?'ok':'err');
+  }
 });
 
 /* ═══════════════════ 预算模式 UI ═══════════════════
@@ -1928,6 +1958,27 @@ renderSavedMaps();
   if(rw&&rl){
     if(repo&&repo.indexOf('__')!==0){ rl.href=repo; rl.textContent=repo.replace(/^https?:\/\//,''); }
     else { rw.style.display='none'; }
+  }
+
+  /* 反馈邮箱：复制按钮（玩家可能不方便点 mailto，直接复制更省事） */
+  const MAIL='__GAME_CONTACT__';
+  const bcm=$('#btnCopyMail');
+  if(bcm){
+    bcm.addEventListener('click',function(){
+      const msg=$('#feedbackMsg');
+      try{
+        if(typeof navigator!=='undefined'&&navigator.clipboard&&navigator.clipboard.writeText){
+          navigator.clipboard.writeText(MAIL);
+        } else {
+          const ta=document.createElement('textarea');
+          ta.value=MAIL; document.body.appendChild(ta); ta.select();
+          if(document.execCommand) document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        if(msg) msg.textContent='已复制';
+      }catch(e){ if(msg) msg.textContent='复制失败，请手动选中'; }
+      setTimeout(function(){ if(msg) msg.textContent=''; },1800);
+    });
   }
 })();
 
@@ -2773,6 +2824,25 @@ window.QB = {
     G.selected=save.sel; G.parts=save.parts; G.bullets=save.bullets;
     G.__mainRegion=null;
     return out;
+  },
+
+  /* 把「自定义地图」清掉，恢复成预置图。
+     回归测试里必须用：前面的用例可能写过自定义网格到 SIZE_MAP，
+     不清的话后续用例跑的不是预想的图，结果无法复现。 */
+  resetMapState(){
+    for (const k in SIZE_MAP) {
+      SIZE_MAP[k].custom = null;
+      SIZE_MAP[k].kind = 'balanced';
+      SIZE_MAP[k].customSpawns = [];
+      SIZE_MAP[k].customSpawners = [];
+    }
+    missionFlag = false;
+    G.missionLock = false;
+    G.mission.on = false;
+    G.mission.civs = [];
+    G.mission.zone = null;
+    G.__mainRegion = null;
+    return true;
   },
 
   /* ---- 随机地图 ---- */
@@ -4141,9 +4211,16 @@ window.QB = {
         out.panic={start:+d0.toFixed(1), end:+Math.hypot(h1.x-z1.x,h1.y-z1.y).toFixed(1),
                    awayMove:+along.toFixed(1), lateral:+(mv.x*(-away.y)+mv.y*away.x).toFixed(1)};
         // ①b 对照：僵尸在射程外且预设为坚守 → 不该主动贴上去
+        /* ★ 距离要按**射程**算，不能写死格数。
+           TILE 从 32 改成 24 后，原来「10 格 = 320px」变成了 240px，
+           正好落进步枪射程（240）里 → 人类当然会靠近，测试就失败了。
+           现在按「射程 × 1.4」放，保证一定在射程外。 */
         G.units=[]; G.time=0; G.tick=0;
-        const h2=makeUnit('rifle',0,cx_of(10),cy_of(11),1);
-        const z2=makeUnit('zombie',1,cx_of(20),cy_of(11),1);
+        const _rifleRange = CLASSES.rifle.range;      // 240
+        const _gapPx = _rifleRange * 1.4;              // 336px，稳在射程外
+        const _gapTiles = Math.max(2, Math.round(_gapPx / TILE));
+        const h2=makeUnit('rifle',0,cx_of(8),cy_of(Math.floor(GH/2)),1);
+        const z2=makeUnit('zombie',1,cx_of(8+_gapTiles),cy_of(Math.floor(GH/2)),1);
         h2.behavior='hold'; h2.spawnT=z2.spawnT=0;
         G.units.push(h2,z2);
         const h2a={x:h2.x,y:h2.y};

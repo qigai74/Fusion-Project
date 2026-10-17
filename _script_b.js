@@ -305,20 +305,34 @@ function freeStance(u,e,dd,range,dt){
   /* 局部劣势：敌人比友军多（含我自己），或者我压根没队友 */
   const localLosing=(foes+1)>allies;
   const alone=allies===0;
+  /* ★ 关键修正：**附近根本没有敌人时不能算「劣势」**。
+     旧逻辑只要 alone=true（周围没队友）就永远是 cover，
+     于是单位在远处、看不到敌人时也一直缩着，
+     整局对峙不动 —— 实测 12 个人类在 420 秒里 X 坐标一动没动，
+     而僵尸推到射程边缘就僵住，双方隔着 192px 干瞪眼。
+     现在：foes===0（附近无敌人）时，如果敌人还够不着，
+     就该主动压上去找架打，而不是原地等。 */
+  const noThreatNearby = (foes===0);
+  const tooFar = dd > range*0.95;
+  /* 附近敌人数量为 0 但全局目标还很远 → 推进（去找敌人） */
+  const shouldAdvance = noThreatNearby && tooFar && !hurt;
   let plan;
   if(d.melee||u.cls==='shotgun'){
     /* 近战/霰弹本来就该贴脸，但也不能一个人冲一群 */
     plan=(alone&&foes>=2)?'cover':((dd>standoffOf(u,d)*1.1)?'push':'cover');
+  } else if(shouldAdvance){
+    plan='push';                                   // 附近没敌人又够不着 → 主动去找
   } else if(hurt||localLosing||alone){
     plan='cover';                                  // 劣势/落单 → 先找掩体，绝不推进
-  } else if(dd>range*0.95){
+  } else if(tooFar){
     plan='push';                                   // 够不着且人数不吃亏 → 才推进
   } else {
     plan='cover';
   }
   /* 滞回：任何时刻只要态势不利，一律不许「推进」——
-     避免刚从 cover 切到 push 就撞上敌群送死。 */
-  if(plan==='push'&&(localLosing||hurt||alone)) plan='cover';
+     避免刚从 cover 切到 push 就撞上敌群送死。
+     但「附近无敌人的主动推进」不受此限制（否则又会僵住）。 */
+  if(plan==='push'&&!shouldAdvance&&(localLosing||hurt||alone)) plan='cover';
   u.plan=plan;
   return plan;
 }
@@ -651,17 +665,27 @@ function humanTargetScore(u,o,d){
 }
 function pickHumanTarget(u,searchR){
   let best=null,bs=1e9;
+  /* ★ 第二候选：**视线被挡**但距离最近的敌人。
+     为什么需要：地图换成真实街区后，建筑会挡住视线（losClear=false）。
+     旧逻辑只认「看得见」的敌人，于是双方隔着街区互相看不见，
+     谁都不选目标 → 整局对峙不动（实测 12 人 420 秒 X 坐标没变过，
+     hp 全是满的）。有它兜底，看不见人时也会朝敌人方向推进，
+     走到能看见/能打到的地方自然就打起来了。 */
+  let blindBest=null, blindD=1e9;
   forEachNear(u.x,u.y,o=>{
     if(!o.alive||o.team===u.team) return;
     /* ★ 不能只把僵尸当目标：本作支持「人类 vs 人类」「三方混战」，
        过滤掉非僵尸会让这些模式完全打不起来（回归测试直接挂掉）。 */
     const d=Math.hypot(o.x-u.x,o.y-u.y);
     if(d>searchR) return;
-    if(!losClear(u.x,u.y,o.x,o.y)) return;
-    const sc=humanTargetScore(u,o,d);
-    if(sc<bs){ bs=sc; best=o; }
+    if(losClear(u.x,u.y,o.x,o.y)){
+      const sc=humanTargetScore(u,o,d);
+      if(sc<bs){ bs=sc; best=o; }
+    } else if(d<blindD){
+      blindD=d; blindBest=o;
+    }
   },searchR);
-  return best;
+  return best||blindBest;
 }
 function tickHuman(u,dt){
   const d=CLASSES[u.cls];
@@ -1269,10 +1293,9 @@ function checkEnd(){
       const pc=m.total?Math.round(m.saved/m.total*100):0;
       return endMatch(m.saved>0?0:-1,'撤离结束：救出 '+m.saved+'/'+m.total+' 名平民（'+pc+'%）');
     }
-    if(G.time>=G.matchTime){
-      const pc=m.total?Math.round(m.saved/m.total*100):0;
-      return endMatch(m.saved>0?0:-1,'时间耗尽：救出 '+m.saved+'/'+m.total+' 名平民（'+pc+'%）');
-    }
+    /* ★ 撤离模式也**不再有时间上限**（原来到点按救出人数结算）。
+       现在只有「所有平民都有结果（撤走或牺牲）」才结束 ——
+       救得慢就得继续扛，这是撤离模式的核心压力，不该被计时器掐断。 */
     return;                      // 任务未完成 → 比赛继续
   }
   const live=[];
@@ -1283,11 +1306,7 @@ function checkEnd(){
     const humans=[];
     for(let i=0;i<teams.length;i++) if(teams[i].type==='h'&&aliveCount(i)>0) humans.push(i);
     if(!humans.length) return endMatch(-1,'人类阵营全员阵亡');
-    if(G.time>=G.matchTime){
-      let best=humans[0], bf=hpFrac(humans[0]);
-      for(const i of humans){ const f=hpFrac(i); if(f>bf){ bf=f; best=i; } }
-      return endMatch(best,'时间耗尽，按人类剩余战力判定');
-    }
+    /* ★ 不再有时间上限：波次放完、人还在，就继续打 */
     return;
   }
   if(live.length===1){
@@ -1295,13 +1314,12 @@ function checkEnd(){
     return endMatch(w, teams.length>2 ? teamName(w)+' 击败了其余所有队伍'
                                       : (w===0?'僵尸阵营被全部清除':'人类型阵营全员阵亡'));
   }
-  if(G.time>=G.matchTime){
-    let best=live[0], bf=hpFrac(live[0]);
-    for(const i of live){ const f=hpFrac(i); if(f>bf){ bf=f; best=i; } }
-    const second=live.filter(i=>i!==best).map(i=>hpFrac(i));
-    if(second.length&&Math.abs(bf-Math.max.apply(null,second))<0.02) return endMatch(-1,'时间耗尽，双方战力持平');
-    return endMatch(best,'时间耗尽，按剩余战力判定');
-  }
+  /* ★ 时间限制已**全部移除**（用户明确要求）。
+     旧行为：到 240 秒就按剩余战力判胜负。
+     问题：一局打得正酣时被强行掐断，玩家体验极差，
+     而且「谁战力高」跟战场实际态势经常对不上（比如一方正在包抄）。
+     现在：**只按战场结果判定** —— 一方被打光、或撤离任务有结论才结束。
+     想快点结束就自己点加速（1×/2×/4×），节奏交给玩家。 */
 }
 function stepSim(dt){
   if(G.phase!=='battle') return;
@@ -1922,8 +1940,5 @@ function render(){
   drawGrenades(ctx);
   drawParticles(ctx);
   drawSelBox(ctx);
-  if(G.phase==='battle'&&G.time>G.matchTime-30){
-    const a=0.09+0.05*Math.sin(performance.now()/220);
-    ctx.fillStyle='rgba(255,80,80,'+a.toFixed(3)+')'; ctx.fillRect(0,0,VW,VH);
-  }
+  /* 原来这里会在「最后 30 秒」盖一层红光警示 —— 时间限制已移除，一并删掉。 */
 }

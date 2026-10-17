@@ -25,6 +25,7 @@ module.exports = {
 
   SITE:    '',            // 例：'https://fusion.example.com'（留空则不显示入口）
   REPO:    '',            // 例：'https://github.com/you/fusion-arena'
+  CONTACT: '3867556101@qq.com',   // 反馈邮箱（显示在「关于」页，可点击发信）
   LICENSE: 'CC BY-NC-SA 4.0',
   YEAR:    2026,
 

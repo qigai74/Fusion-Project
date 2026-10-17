@@ -25,6 +25,7 @@ const BRAND_MAP = {
   '__GAME_REPO__':       B.REPO,
   '__GAME_LICENSE__':    B.LICENSE,
   '__GAME_YEAR__':       String(B.YEAR),
+  '__GAME_CONTACT__':    B.CONTACT || '',
 };
 
 let html = PARTS.map(p => fs.readFileSync(path.join(__dirname, p), 'utf8')).join('');
@@ -169,6 +170,41 @@ refIds.forEach(function (id) {
 });
 if (broken.length) {
   console.warn('⚠ 以下 id 被 JS 引用但 HTML 里不存在、且未判空（会导致脚本中断）：' + broken.join(', '));
+}
+
+/* ★ 自检：音效配方引用的 clip 名必须真实存在。
+   曾经有 5 个配方引用了不存在的样本（metalhit / fleshhit / stonehit /
+   woodhit / hurt）且**没有兜底** → 运行时完全静音。
+   其中 woodhit 是僵尸砸门的高频音效，整场听不到破坏声，
+   玩家感觉「音效丢失」。无头测试查不出来（没有真实 AudioContext），
+   只能在构建阶段静态检查。 */
+{
+  const clipBlock = html.match(/const SFX_CLIPS\s*=\s*\{([\s\S]*?)\n\};/);
+  const recipeBlock = html.match(/const SFX_RECIPES\s*=\s*\{([\s\S]*?)\n\};/);
+  if (clipBlock && recipeBlock) {
+    const clipNames = new Set();
+    const cnRe = /^\s{2}(\w+)\s*:\s*['"]/gm;
+    let cn;
+    while ((cn = cnRe.exec(clipBlock[1]))) clipNames.add(cn[1]);
+
+    const refs = new Set();
+    let r;
+    const p1 = /playClip\(\s*'([^']+)'/g;
+    while ((r = p1.exec(recipeBlock[1]))) refs.add(r[1]);
+    const p2 = /pickClip\(\s*\[([^\]]+)\]/g;
+    while ((r = p2.exec(recipeBlock[1]))) {
+      const p3 = /'([^']+)'/g;
+      let r3;
+      while ((r3 = p3.exec(r[1]))) refs.add(r3[1]);
+    }
+    const missing = [];
+    refs.forEach(function (k) { if (!clipNames.has(k)) missing.push(k); });
+    if (missing.length) {
+      console.warn('⚠ 音效配方引用了不存在的样本（会静音）：' + missing.join(', '));
+    } else {
+      console.log('音效自检通过：' + refs.size + ' 个引用全部有对应样本');
+    }
+  }
 }
 
 console.log('built index.html (' + html.length + ' bytes, 音效 ' +

@@ -21,14 +21,27 @@ function rr(a,b){ return a+(b-a)*rng(); }
 function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=(rng()*(i+1))|0; const t=arr[i]; arr[i]=arr[j]; arr[j]=t; } return arr; }
 
 /* ---------------- 网格常量（地图尺寸可切换：小 / 中 / 大） ---------------- */
-const TILE=32;
+/* ★ 网格尺寸缩小（32 → 24），地图格数相应放大。
+   为什么这么做（用户提示「像他一样单个模块的占用变小」）：
+   参考作品是 300×660 的竖屏画面，却能装下上百个单位 ——
+   说明它的**单个模块（格子）相对很小**，单位密度极高。
+
+   我们原来是 TILE=32、40×22，一屏只有 880 格，
+   几十个单位就显得很挤，而掩体一旦占掉 1 格就是 32px 的大块。
+   现在 TILE=24、地图格数等比放大（见 MAP_SIZES），效果是：
+     · 同样一块掩体在地图上占的**视觉比例更小**，可以摆得更细
+     · 战场格数从 880 提到 1500+，容纳的单位与掩体都更多
+     · 单位相对地图变小 → 交火距离拉长，更接近参考作品的观感
+   TILE 只影响「一格多少像素」，所有战斗数值（射程/速度/半径）
+   都是像素单位，改 TILE 不会改变单位之间的相对强弱。 */
+const TILE=24;
 const MAP_SIZES={
-  small: {name:'小地图',gw:28,gh:16},
-  medium:{name:'中地图',gw:40,gh:22},
-  large: {name:'大地图',gw:56,gh:30},
-  huge:  {name:'超大地图',gw:72,gh:40},   // 城市救援专用：够大才塞得下街区与迷宫
+  small: {name:'小地图',gw:36,gh:20},
+  medium:{name:'中地图',gw:52,gh:28},
+  large: {name:'大地图',gw:72,gh:40},
+  huge:  {name:'超大地图',gw:96,gh:54},   // 城市救援 / 大规模交战专用
 };
-let MSIZE='medium', GW=40, GH=22, VW=GW*TILE, VH=GH*TILE;
+let MSIZE='medium', GW=52, GH=28, VW=GW*TILE, VH=GH*TILE;
 const EMPTY=0, WALL=1, WIN=2, DOOR=3;
 const DOOR_MAX=150;
 const WIN_MAX=90;             // 窗的结构耐久（僵尸可砸穿，砸穿后变成缺口）
@@ -555,7 +568,10 @@ const G = {
   units:[], bullets:[], parts:[], corpses:[], feed:[], counter:1, grenades:[],
   shocks:[], scorches:[],          // 爆炸冲击波 / 地面焦痕
   jets:[],                         // 喷火兵的连续火线
-  time:0, tick:0, speed:1, paused:false, result:null, hudT:0, endT:0, matchTime:240,
+  /* ★ matchTime 已移除：对局不再有时间上限，
+     只按战场结果（一方被打光 / 撤离任务有结论）判定胜负。
+     保留字段会让后来接手的人误以为还有计时逻辑。 */
+  time:0, tick:0, speed:1, paused:false, result:null, hudT:0, endT:0,
   kills:[], infections:0, converted:0,
   civPos:[], zCap:60, startCount:[], stats:null, baseDirty:true,
   showNums:false, behavior:'free', cmdOn:true, reloadOn:false,
@@ -1134,7 +1150,12 @@ function carveAlley(g, isRoad, x, y, len, rnd2){
   }
 }
 
-function buildCityMap(variant,seed){
+/* ⚠️ 这是**上一代**的城市生成器，已被下方的 buildCityMap（v3）取代。
+   改名保留只是为了不破坏可能存在的旧引用；
+   真正的生成逻辑见文件后部的 buildCityMap(style, seed)。
+   ★ 教训：两个同名函数，后定义的会静默覆盖先定义的 ——
+     这次就是这样，新生成器写好了却完全没生效。 */
+function buildCityMapV2Legacy(variant,seed){
   const rnd2=seededRng(seed||12345);
   const g=newGrid();
   gBorder(g);
@@ -1499,402 +1520,249 @@ function buildCityMapGridLegacy(variant,seed){
 
 /* 把整张图按「路网 + 街区」铺满。
    返回 isRoad（1=道路，0=未铺，-1=已是建筑）便于后续判断。 */
-function paveStreetGrid(g, isRoad, rnd2, cfg){
-  /* ★ 道路宽度是「空旷感」的最大来源。
-     旧参数：主干道宽 3、次干道宽 2 —— 在 22 行的地图上，
-     3 条横向主干道就吃掉 9 行（41% 的面积全是路面），
-     于是地图看上去是一道道空白横带（实测正是如此）。
-     真实城市的道路面积占比只有 15~25%，所以这里全面收窄：
-       主干道 2 格、次干道 1 格、环路 1 格。 */
-  /* ★ 道路宽度按地图尺寸自适应。
-     小地图（40×22）上「主干道宽 2」依然太奢侈 ——
-     3 条横 + 3 条竖 = 约 12 行/列被路面占掉，等于三分之一面积是空的。
-     真实城市道路占比 15~25%，所以：
-       小图 → 主干道 1 格、次干道 1 格（全图只有 1 格宽的路）
-       大图 → 主干道 2 格（有空间做「大马路」）
-     另外道路条数也跟着尺寸走，避免小图被路切碎。 */
-  const MAIN_W = (GW*GH>=56*30) ? 2 : 1;
-  const SUB_W  = 1;
-  /* ① 主干道：**不再是笔直贯穿的直线**，而是「走走停停、允许阶梯式偏移」
-        的折线 —— 这才有崎岖感。做法：每走若干格，整条路上下（或左右）
-        平移 1~2 格，形成阶梯状的路形；同时用一条 1 格宽的连接段把
-        断层接起来，保证车能过、单位能走。 */
-  const vLanes=[], hLanes=[];
-  const step=5+Math.round(rnd2()*4);            // 每 5~8 格折一次
-  const laneOff=[];
-  {
-    /* 预生成这条路的「偏移轨迹」 */
-    const mkOff=(len)=>{
-      const off=[]; let cur=0;
-      for(let i=0;i<len;i++){
-        if(i>0&&i%step===0) cur+=(rnd2()<0.5?-1:1)*(1+Math.round(rnd2()));
-        off.push(cur);
-      }
-      return off;
-    };
-    const nH=Math.max(2,Math.round(cfg.hMain));
-    for(let i=0;i<nH;i++){
-      const seg=(GH-8)/nH;
-      let pos=clamp(Math.round(4+i*seg+rnd2()*Math.max(1,seg-3)),4,GH-6);
-      hLanes.push(pos);
-      const off=mkOff(GW);
-      let prev=null;
-      for(let x=2;x<GW-2;x++){
-        const yy=clamp(pos+off[x],2,GH-3);
-        for(let w=0;w<MAIN_W;w++){
-          const ty=clamp(yy+w,2,GH-3);
-          gSet(g,x,ty,EMPTY); isRoad[idx(x,ty)]=1;
-        }
-        /* 阶梯处补一段纵向连接，避免断层走不通 */
-        if(prev!==null&&prev!==yy){
-          const a=Math.min(prev,yy), b=Math.max(prev,yy);
-          for(let t=a;t<=b;t++){ gSet(g,x,t,EMPTY); isRoad[idx(x,t)]=1; }
-        }
-        prev=yy;
-      }
-    }
-    const nV=Math.max(2,Math.round(cfg.vMain));
-    for(let i=0;i<nV;i++){
-      const seg=(GW-10)/nV;
-      let pos=clamp(Math.round(5+i*seg+rnd2()*Math.max(1,seg-3)),5,GW-6);
-      vLanes.push(pos);
-      const off=mkOff(GH);
-      let prev=null;
-      for(let y=2;y<GH-2;y++){
-        const xx=clamp(pos+off[y],2,GW-3);
-        for(let w=0;w<MAIN_W;w++){
-          const tx=clamp(xx+w,2,GW-3);
-          gSet(g,tx,y,EMPTY); isRoad[idx(tx,y)]=1;
-        }
-        if(prev!==null&&prev!==xx){
-          const a=Math.min(prev,xx), b=Math.max(prev,xx);
-          for(let t=a;t<=b;t++){ gSet(g,t,y,EMPTY); isRoad[idx(t,y)]=1; }
-        }
-        prev=xx;
-      }
-    }
-  }
-  /* ② 次干道：把长条切成街区（宽 1，位置随机，同样允许阶梯偏移） */
-  for(let i=0;i<hLanes.length-1;i++){
-    if(rnd2()<cfg.subChance){
-      const a=hLanes[i], b=hLanes[i+1];
-      if(b-a>7){
-        let pos=clamp(a+3+Math.round(rnd2()*(b-a-7)),a+3,b-2);
-        let cur=pos;
-        for(let x=2;x<GW-2;x++){
-          if(x%step===0&&rnd2()<0.5) cur=clamp(cur+(rnd2()<0.5?-1:1),a+1,b-1);
-          if(cur<GH-2){ gSet(g,x,cur,EMPTY); isRoad[idx(x,cur)]=1; }
-        }
-        hLanes.push(pos);
-      }
+/* ============================================================================
+   城市地图生成器 v3 —— 可读的道路骨架 + 明确的交战逻辑
+   ============================================================================
+   用户反馈：「太随机化了，没有明确的道路指引和交战逻辑倾向」。
+
+   诊断（实测四张图的指标几乎完全相同）：
+     open  / balanced / urban / fort 的连通区 552/564/564/588、
+     掩体比 0.40/0.40/0.41/0.37、最长视线**全是 38** ——
+     说明它们本质是同一张图换了随机种子，风格参数没起作用。
+
+   根因是设计思路反了：
+     旧版：先撒墙 → 剩下的地方算「路」 → 结果是一堆噪声，看不出路在哪
+     新版：先画路 → 路围出来的街区再填建筑 → 路是明确可读的骨架
+
+   这与真实城市、以及成熟俯视角游戏（Project Zomboid / Hotline Miami /
+   Door Kickers）的共同点一致：**一眼就能看出街道在哪、往哪走**。
+
+   三条硬规则：
+     ① 道路必须**连续笔直** —— 从地图一边直通另一边，不拐弯。
+        拐弯的路看起来就是噪声；笔直的路才是「指引」。
+     ② 街区大小**天然不等** —— 路的位置不等距，所以地块有大有小。
+        等距 = 田字格；不等距 = 真实城市。
+     ③ 建筑填满地块，但**朝街开门开窗** —— 这决定「从哪进屋、在哪防守」。
+
+   交战逻辑由风格参数决定（见 CITY_STYLE）：
+     open     少路网 + 宽路 + 干净路面 → 长视线，远程/狙击占优
+     balanced 标准路网 + 适中宽度     → 远近混合
+     urban    密路网 + 窄路 + 路面瓦砾 → 短视线，近战/霰弹占优
+     fort     标准路网 + 中央大据点    → 交战集中在中心
+   ========================================================================== */
+/* ============================================================================
+   地图生成器 v4 —— 按参考游戏实测数据重做
+   ============================================================================
+   数据来源：逐帧解码 UP 主「这球有问题」的 11 集（88 帧，300×660），
+   统计战场区域的「非地面像素」占比：
+
+     EP03 6.5%   EP04 5.2%   EP07 8.5%   EP08 5.6%   EP10 8.4%
+     EP11 7.3%   EP17 8.1%   EP18 5.6%   EP20 6.0%   EP23 11.6%  EP24 8.6%
+
+   → **掩体只占 5~12%，地面占 88~95%**。
+
+   对比我之前做的地图：墙占 33~42%，是参考值的 4~7 倍。
+   这就是「太随机、没有交战逻辑」的根本原因 ——
+   地图被建筑填死了，双方隔着一堆墙互相看不见，
+   AI 找不到目标就原地不动（实测 12 人 420 秒 X 坐标没变过）。
+
+   所以核心改动是**做减法**：
+     ① 地面要占 85% 以上 —— 这是交火能发生的前提
+     ② 掩体是**成块的柱子/矮墙**，不是连片的建筑
+     ③ 掩体要**分散**在战场各处，制造「推进—找掩体—再推进」的节奏
+     ④ 中间留出大块空地作为主战场（参考图里中间几乎全是空的）
+
+   风格差异靠「掩体形态 + 密度」做，不再靠「建筑覆盖率」：
+     open      6%   极稀疏的柱子，几乎纯开阔 → 远程压制
+     balanced  10%  中等的块状掩体，均匀散布 → 标准攻防
+     urban     16%  密集的矮墙长廊 → 近身缠斗
+     fort      12%  中央大据点 + 四周开阔 → 争夺中心
+   ========================================================================== */
+
+const MAP_STYLE = {
+  /* coverPct : 掩体占地图面积的目标比例（按参考数据定）
+     minGap   : 掩体之间至少隔几格（防止连成片把地图堵死）
+     shape    : 掩体形态 'pillar'（柱）/ 'wall'（矮墙）
+     plaza    : 中央是否留大空地
+     roomChance : 掩体里做成「可进入的小房间」的概率
+                  （房间是少数派 —— 参考图里绝大多数掩体是柱子/矮墙）
+     winBias  : 掩体做成「窗」的概率（窗可透视，不切断视野）。
+                掩体越稀疏的风格，窗比例越高 —— 否则整张图只剩几堵实心墙，
+                既没有可透视掩体，随机生成也会因「开口不足」被判不合格。 */
+  open:     { coverPct: 0.07, minGap: 5, shape: 'pillar', plaza: false, roomChance: 0.05, winBias: 0.85 },
+  balanced: { coverPct: 0.11, minGap: 3, shape: 'wall',   plaza: false, roomChance: 0.16, winBias: 0.60 },
+  urban:    { coverPct: 0.17, minGap: 2, shape: 'wall',   plaza: false, roomChance: 0.30, winBias: 0.45 },
+  fort:     { coverPct: 0.13, minGap: 3, shape: 'pillar', plaza: true,  roomChance: 0.22, winBias: 0.70 },
+};
+
+/* 在 (x,y) 附近是否已有掩体（用于保持最小间距，避免连成一片） */
+function nearCover(g, x, y, gap) {
+  for (let dy = -gap; dy <= gap; dy++) {
+    for (let dx = -gap; dx <= gap; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (!inB(nx, ny)) continue;
+      const t = g[idx(nx, ny)];
+      if (t === WALL || t === WIN) return true;
     }
   }
-  for(let i=0;i<vLanes.length-1;i++){
-    if(rnd2()<cfg.subChance){
-      const a=vLanes[i], b=vLanes[i+1];
-      if(b-a>8){
-        let pos=clamp(a+4+Math.round(rnd2()*(b-a-8)),a+4,b-2);
-        let cur=pos;
-        for(let y=2;y<GH-2;y++){
-          if(y%step===0&&rnd2()<0.5) cur=clamp(cur+(rnd2()<0.5?-1:1),a+1,b-1);
-          if(cur<GW-2){ gSet(g,cur,y,EMPTY); isRoad[idx(cur,y)]=1; }
-        }
-        vLanes.push(pos);
-      }
-    }
-  }
-  /* ③ 环路：把两条主干道用一条窄路连起来，形成可绕行的支线 */
-  for(let i=0;i<cfg.loops;i++){
-    const h=hLanes[Math.floor(rnd2()*hLanes.length)];
-    const h2=hLanes[Math.floor(rnd2()*hLanes.length)];
-    const x=clamp(4+Math.round(rnd2()*(GW-8)),4,GW-5);
-    const y0=Math.min(h,h2)+3, y1=Math.max(h,h2);
-    for(let y=y0;y<y1;y++){
-      if(inB(x,y)){ gSet(g,x,y,EMPTY); isRoad[idx(x,y)]=1; }
-      if(rnd2()<0.4&&inB(x+1,y)){ gSet(g,x+1,y,EMPTY); isRoad[idx(x+1,y)]=1; }
-    }
-  }
-  return {hLanes:hLanes, vLanes:vLanes};
+  return false;
 }
 
-/* 把「街区」（被路网围出的地块）填满建筑。
-   每个地块的处理：
-     · 沿街那圈立墙 → 形成连续的街墙（城市感的关键）
-     · 开若干门 / 窗 → 可进可守
-     · 内部挖成 1~2 个房间
-     · 建筑之间偶尔留巷道，避免整块死实心
-   参数 density 控制「填满程度」，越大越像市中心。 */
-function fillBlocks(g, isRoad, rnd2, density){
-  const visited=new Uint8Array(GW*GH);
-  for(let y=2;y<GH-2;y++){
-    for(let x=2;x<GW-2;x++){
-      const i=idx(x,y);
-      if(visited[i]) continue;
-      if(isRoad[i]!==0||g[i]!==EMPTY) { visited[i]=1; continue; }
-      /* 洪水填充找出这一整块「非道路空地」 */
-      const q=[i]; visited[i]=1;
-      const cells=[];
-      while(q.length){
-        const ci=q.pop(); cells.push(ci);
-        const cx=ci%GW, cy=(ci/GW)|0;
-        const nb=[[1,0],[-1,0],[0,1],[0,-1]];
-        for(const d of nb){
-          const nx=cx+d[0], ny=cy+d[1];
-          if(nx<2||nx>=GW-2||ny<2||ny>=GH-2) continue;
-          const ni=idx(nx,ny);
-          if(visited[ni]) continue;
-          if(isRoad[ni]!==0||g[ni]!==EMPTY) { visited[ni]=1; continue; }
-          visited[ni]=1; q.push(ni);
-        }
-      }
-      if(cells.length<2) continue;                  // 太小，留着当缝隙
-      /* 这块要不要盖楼？density 越高越倾向盖满 */
-      if(rnd2()>density){
-        /* 不盖楼：当作「停车场 / 小广场」，撒少量矮掩体充当半掩体 */
-        const n=Math.max(1,Math.round(cells.length*0.12));
-        for(let k=0;k<n;k++){
-          const ci=cells[Math.floor(rnd2()*cells.length)];
-          const cx=ci%GW, cy=(ci/GW)|0;
-          gSet(g,cx,cy, rnd2()<0.6?WALL:WIN);
-        }
-        continue;
-      }
-      /* 盖楼：整块先铺成墙，再挖内部房间 */
-      let x0=GW, x1=0, y0=GH, y1=0;
-      for(const ci of cells){
-        const cx=ci%GW, cy=(ci/GW)|0;
-        if(cx<x0) x0=cx; if(cx>x1) x1=cx;
-        if(cy<y0) y0=cy; if(cy>y1) y1=cy;
-      }
-      for(const ci of cells){
-        const cx=ci%GW, cy=(ci/GW)|0;
-        gSet(g,cx,cy,WALL);
-        isRoad[ci]=-1;
-      }
-      const w=x1-x0+1, h=y1-y0+1;
-      /* 内部挖房间：留 1 格厚的外墙。
-         ★ 大地块要切成**多栋**小楼（而不是一个大方块），
-           楼与楼之间留 1 格巷道 —— 这才是城市的样子，
-           也让「街区内部」有近距离交战的空间。 */
-      const splitW = w>=9, splitH = h>=7;
-      if(w>=4&&h>=4){
-        for(let cy=y0+1;cy<=y1-1;cy++) for(let cx=x0+1;cx<=x1-1;cx++) gSet(g,cx,cy,EMPTY);
-        /* 横向切一刀（留巷道） */
-        if(splitW){
-          const mx=x0+3+Math.round(rnd2()*(w-6));
-          for(let cy=y0;cy<=y1;cy++) gSet(g,mx,cy,WALL);
-          /* 在巷道上敲掉几格当通道（每隔一段留个口） */
-          for(let cy=y0+1;cy<=y1-1;cy+=3) gSet(g,mx,cy,EMPTY);
-          if(h>=5){ const dy=y0+2+Math.round(rnd2()*(h-4));
-            gSet(g,mx,clamp(dy,y0+1,y1-1),DOOR); }
-        }
-        /* 纵向切一刀（留巷道） */
-        if(splitH){
-          const my=y0+2+Math.round(rnd2()*(h-4));
-          for(let cx=x0;cx<=x1;cx++) gSet(g,cx,my,WALL);
-          for(let cx=x0+1;cx<=x1-1;cx+=3) gSet(g,cx,my,EMPTY);
-          if(w>=5){ const dx=x0+2+Math.round(rnd2()*(w-4));
-            gSet(g,clamp(dx,x0+1,x1-1),my,DOOR); }
-        }
-        /* 再随机打散内部：把大房间切成小间（增加可玩空间与掩体） */
-        if(w>=6&&h>=5&&rnd2()<0.6){
-          const n=1+Math.round(rnd2()*2);
-          for(let k=0;k<n;k++){
-            const px=x0+1+Math.round(rnd2()*(w-3));
-            const py=y0+1+Math.round(rnd2()*(h-3));
-            if(px<=x0||px>=x1||py<=y0||py>=y1) continue;
-            for(let cy=py;cy<=Math.min(py+1,y1-1);cy++) gSet(g,px,cy,WALL);
-          }
-        }
-      }
-      /* ★ 沿街开门开窗：城市感的关键 —— 每栋楼都要「面向街道」。
-         遍历外墙上每个格子，检查它朝外的邻居是不是道路。
-         ★ 概率按地图尺寸放大：小图（28×16）上建筑本来就少，
-           0.18/0.55 的概率会算出「全图只有 1 扇门」——
-           实测 mission1 在 small 尺寸下确实只有 1 个门，
-           整张图几乎没有可进可守的房间，战术性全失。
-           小图给更高概率，保证每栋楼都有开口。 */
-      const areaScale=clamp((40*22)/(GW*GH),1,2.4);
-      const pDoor=0.18*areaScale, pWin=0.55*areaScale;
-      let doors=0, wins=0;
-      const put=(cx,cy,type)=>{
-        if(cx<x0||cx>x1||cy<y0||cy>y1) return;
-        /* 必须是外墙格 */
-        if(cx!==x0&&cx!==x1&&cy!==y0&&cy!==y1) return;
-        gSet(g,cx,cy,type);
-        if(type===DOOR) doors++; else wins++;
-      };
-      for(let cx=x0;cx<=x1;cx++){
-        for(const [cy,dy] of [[y0,-1],[y1,1]]){
-          const ny=cy+dy;
-          if(ny<2||ny>=GH-2) continue;
-          if(isRoad[idx(cx,ny)]!==1) continue;
-          const r=rnd2();
-          if(r<pDoor&&doors<3) put(cx,cy,DOOR);
-          else if(r<pWin&&wins<6) put(cx,cy,WIN);
-        }
-      }
-      for(let cy=y0;cy<=y1;cy++){
-        for(const [cx,dx] of [[x0,-1],[x1,1]]){
-          const nx=cx+dx;
-          if(nx<2||nx>=GW-2) continue;
-          if(isRoad[idx(nx,cy)]!==1) continue;
-          const r=rnd2();
-          if(r<pDoor&&doors<3) put(cx,cy,DOOR);
-          else if(r<pWin&&wins<6) put(cx,cy,WIN);
-        }
-      }
-      /* 至少给一个门，否则里面进不去（AI 也会把它当实心墙）。
-         ★ 优先挑「朝街道」的那面 —— 旧版从整个外圈随机挑，
-           有可能把门开在背街的一面，既不合理也不连通。 */
-      if(doors===0){
-        const facing=[], any=[];
-        for(let cx=x0;cx<=x1;cx++){
-          if(inB(cx,y0-1)&&isRoad[idx(cx,y0-1)]===1) facing.push([cx,y0]);
-          if(inB(cx,y1+1)&&isRoad[idx(cx,y1+1)]===1) facing.push([cx,y1]);
-          any.push([cx,y0]); any.push([cx,y1]);
-        }
-        for(let cy=y0;cy<=y1;cy++){
-          if(inB(x0-1,cy)&&isRoad[idx(x0-1,cy)]===1) facing.push([x0,cy]);
-          if(inB(x1+1,cy)&&isRoad[idx(x1+1,cy)]===1) facing.push([x1,cy]);
-          any.push([x0,cy]); any.push([x1,cy]);
-        }
-        const pool=facing.length?facing:any;
-        if(pool.length){
-          const p=pool[Math.floor(rnd2()*pool.length)];
-          gSet(g,p[0],p[1],DOOR);
-          doors++;
-        }
-      }
-      /* 门太少时再补一个（小图上尤其重要：只有 1 个门的楼等于死盒子） */
-      if(doors<2){
-        for(let cx=x0;cx<=x1&&doors<2;cx++){
-          if(inB(cx,y0-1)&&isRoad[idx(cx,y0-1)]===1&&g[idx(cx,y0)]===WALL){ gSet(g,cx,y0,DOOR); doors++; }
-          else if(inB(cx,y1+1)&&isRoad[idx(cx,y1+1)]===1&&g[idx(cx,y1)]===WALL){ gSet(g,cx,y1,DOOR); doors++; }
-        }
-        for(let cy=y0;cy<=y1&&doors<2;cy++){
-          if(inB(x0-1,cy)&&isRoad[idx(x0-1,cy)]===1&&g[idx(x0,cy)]===WALL){ gSet(g,x0,cy,DOOR); doors++; }
-          else if(inB(x1+1,cy)&&isRoad[idx(x1+1,cy)]===1&&g[idx(x1,cy)]===WALL){ gSet(g,x1,cy,DOOR); doors++; }
-        }
-      }
+/* 放一根柱子（1~2 格的小掩体）。
+   ★ 窗的比例要给够：窗是**半掩体**（挡移动不挡子弹/视线），
+     是「隔窗对射」这种战术的基础。参考游戏里掩体本身很少，
+     所以每一块掩体都要尽量发挥价值 —— 相当一部分做成可透视的窗，
+     这样既挡走位又不切断视野，比实心墙更有利于交火。
+   ★ `open` 风格要特别提高窗的比例：
+     它掩体最少（7%），如果还全做实心墙，整张图只会剩下几堵孤零零的墙，
+     门窗数量凑不够 → 随机生成被判不合格（实测 open 只有 2~6 个开口）。
+     掩体少的地方，每一块都应该尽量是「可透视的」，
+     这样既不堵视野，又能提供战术位置。 */
+function placePillar(g, isRoad, x, y, rnd, winBias) {
+  const pWin = (winBias === undefined) ? 0.55 : winBias;
+  gSet(g, x, y, rnd() < pWin ? WIN : WALL);
+  if (rnd() < 0.30) {
+    const dx = rnd() < 0.5 ? 1 : -1;
+    if (inB(x + dx, y) && g[idx(x + dx, y)] === EMPTY) {
+      gSet(g, x + dx, y, rnd() < pWin ? WIN : WALL);
     }
   }
 }
 
-function buildTacticalMap(style, seed){
-  const rnd2=seededRng(seed||11002);
-  const g=newGrid();
+/* 放一段矮墙（3~5 格），带一个可绕行的缺口 */
+function placeWall(g, isRoad, x, y, horiz, rnd) {
+  const len = 3 + Math.floor(rnd() * 3);
+  const gapAt = Math.floor(rnd() * len);
+  for (let i = 0; i < len; i++) {
+    if (i === gapAt) continue;                    /* 留缺口，不是实心墙 */
+    const px = horiz ? x + i : x;
+    const py = horiz ? y : y + i;
+    if (!inB(px, py) || px < 2 || px >= GW - 2 || py < 2 || py >= GH - 2) break;
+    if (g[idx(px, py)] !== EMPTY) break;
+    /* 矮墙里混入窗：半数以上是窗，形成「断续的半掩体线」 */
+    gSet(g, px, py, rnd() < 0.45 ? WALL : WIN);
+  }
+}
+
+/* 放一个小房间（可进入的掩体，给「逐屋清理」用）。
+   注意：房间是**稀有的**，不是画满整张图。 */
+function placeRoom(g, isRoad, x, y, rnd) {
+  const w = 3 + Math.floor(rnd() * 2);
+  const h = 2 + Math.floor(rnd() * 2);
+  if (x + w >= GW - 2 || y + h >= GH - 2) return;
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const edge = (i === 0 || i === w - 1 || j === 0 || j === h - 1);
+      if (edge) gSet(g, x + i, y + j, WALL);
+      else gSet(g, x + i, y + j, EMPTY);
+    }
+  }
+  /* 至少开一个门，保证能进去 */
+  const side = Math.floor(rnd() * 4);
+  if (side === 0) gSet(g, x + 1, y, DOOR);
+  else if (side === 1) gSet(g, x + 1, y + h - 1, DOOR);
+  else if (side === 2) gSet(g, x, y + 1, DOOR);
+  else gSet(g, x + w - 1, y + 1, DOOR);
+}
+
+/* 主入口 */
+function buildCityMap(style, seed) {
+  const rnd = seededRng(seed || 20261017);
+  const S = MAP_STYLE[style] ? style : 'balanced';
+  const cfg = MAP_STYLE[S];
+  const g = newGrid();
   gBorder(g);
-  const S=style||'balanced';
-  /* 参数：不同风格 = 不同的路网密度与建筑填充度 */
-  const cfgAll={
-    /* 开阔：路网疏、留白多（远程与机动优势） */
-    open:     {hMain:2, vMain:2, subChance:0.35, loops:1, density:0.55, scatter:0.02},
-    /* 均衡：标准城市 */
-    balanced: {hMain:3, vMain:3, subChance:0.55, loops:2, density:0.72, scatter:0.02},
-    /* 巷战：路网密、几乎填满（近距离交战） */
-    urban:    {hMain:4, vMain:4, subChance:0.75, loops:3, density:0.86, scatter:0.015},
-    /* 要塞：中央留一块大空地做据点，其余填满 */
-    fort:     {hMain:3, vMain:3, subChance:0.65, loops:3, density:0.80, scatter:0.02},
-  };
-  const cfg=cfgAll[S]||cfgAll.balanced;
-  /* 按地图尺寸缩放路网密度（小图少几条，大图多几条） */
-  const sc=Math.max(0.6,Math.min(1.8,(GW*GH)/(40*22)));
-  const c2={
-    hMain:Math.max(2,Math.round(cfg.hMain*sc)),
-    vMain:Math.max(2,Math.round(cfg.vMain*sc)),
-    subChance:cfg.subChance, loops:Math.max(1,Math.round(cfg.loops*sc)),
-    density:cfg.density, scatter:cfg.scatter,
-  };
-  const isRoad=new Uint8Array(GW*GH);
-  /* ① 路网 */
-  const lanes=paveStreetGrid(g,isRoad,rnd2,c2);
-  /* ② 街区填建筑 */
-  fillBlocks(g,isRoad,rnd2,c2.density);
-  /* ③ 桥接：把零散的非连通空地打通（建筑之间偶尔留小巷） */
-  let guard=0;
-  while(guard++<60){
-    const reg=mainRegion(g);
-    if(!reg.mask||reg.sealed<=2) break;
-    let fixed=false;
-    for(let y=3;y<GH-3&&!fixed;y++){
-      for(let x=3;x<GW-3&&!fixed;x++){
-        const i=idx(x,y);
-        if(reg.mask[i]||g[i]!==EMPTY) continue;
-        const nb=[[1,0],[-1,0],[0,1],[0,-1]];
-        for(const d of nb){
-          if(reg.mask[idx(x+d[0],y+d[1])]){ gSet(g,x,y,DOOR); fixed=true; break; }
-        }
+  const isRoad = new Uint8Array(GW * GH);
+  const W = GW, H = GH;
+
+  /* 出生区：左右各留 3 列干净地面（单位从这里展开） */
+  const spawnW = 3;
+
+  /* ① 按目标比例放置掩体。
+        用「尝试次数」控制，而不是铺满 —— 这样保证不会过密。 */
+  const targetCells = Math.round(W * H * cfg.coverPct);
+  let placed = 0;
+  let tries = 0;
+  const maxTries = targetCells * 40;
+
+  while (placed < targetCells && tries++ < maxTries) {
+    const x = 2 + Math.floor(rnd() * (W - 4));
+    const y = 2 + Math.floor(rnd() * (H - 4));
+
+    /* 出生区里不放掩体（保证双方能展开） */
+    if (x < spawnW + 1 || x >= W - spawnW - 1) continue;
+    /* 已有掩体太近就跳过 —— 这是「不连成片」的关键 */
+    if (nearCover(g, x, y, cfg.minGap)) continue;
+    if (g[idx(x, y)] !== EMPTY) continue;
+
+    const roll = rnd();
+    if (roll < cfg.roomChance) {
+      placeRoom(g, isRoad, x, y, rnd);
+      placed += 9;                       /* 房间面积大，按 9 格计 */
+    } else if (cfg.shape === 'wall') {
+      placeWall(g, isRoad, x, y, rnd() < 0.5, rnd);
+      placed += 4;
+    } else {
+      placePillar(g, isRoad, x, y, rnd, cfg.winBias);
+      placed += 1;
+    }
+  }
+
+  /* ② fort：中央一块大空地 + 一圈掩体（交战焦点） */
+  if (cfg.plaza) {
+    const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    const rw = Math.max(3, Math.round(W * 0.10));
+    const rh = Math.max(2, Math.round(H * 0.14));
+    for (let y = cy - rh; y <= cy + rh; y++) {
+      for (let x = cx - rw; x <= cx + rw; x++) {
+        if (inB(x, y) && x > 1 && x < W - 2 && y > 1 && y < H - 2) gSet(g, x, y, EMPTY);
       }
     }
-    if(!fixed){
-      for(let y=3;y<GH-3&&!fixed;y++){
-        for(let x=3;x<GW-3&&!fixed;x++){
-          if(reg.mask[idx(x,y)]||g[idx(x,y)]!==EMPTY) continue;
-          carveAlley(g,isRoad,x,y,8,rnd2); fixed=true;
-        }
+    /* 据点外围撒一圈掩体，形成「攻打据点」的层次 */
+    const ringN = Math.round((rw + rh) * 2.2);
+    for (let i = 0; i < ringN; i++) {
+      const a = (i / ringN) * Math.PI * 2;
+      const rx = Math.round(cx + Math.cos(a) * (rw + 1.5));
+      const ry = Math.round(cy + Math.sin(a) * (rh + 1.5));
+      if (!inB(rx, ry) || rx < 2 || rx >= W - 2 || ry < 2 || ry >= H - 2) continue;
+      if (g[idx(rx, ry)] === EMPTY) gSet(g, rx, ry, rnd() < 0.55 ? WALL : WIN);
+    }
+  }
+
+  /* ③ 出生区最终清理：左右各 3 列确保畅通（放在掩体之后，优先级最高） */
+  for (const side of [0, 1]) {
+    const x0 = side === 0 ? 1 : W - spawnW - 1;
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = x0; x < x0 + spawnW; x++) {
+        if (inB(x, y)) { gSet(g, x, y, EMPTY); isRoad[idx(x, y)] = 1; }
       }
-      if(!fixed) break;
     }
   }
-  /* ④ 要塞风格：在地图中央清出一块大空地，作为双方争夺的核心据点 */
-  if(S==='fort'){
-    const cx=Math.floor(GW/2), cy=Math.floor(GH/2);
-    const rw=Math.max(4,Math.round(GW*0.11)), rh=Math.max(3,Math.round(GH*0.20));
-    for(let y=cy-rh;y<=cy+rh;y++) for(let x=cx-rw;x<=cx+rw;x++){
-      if(inB(x,y)&&x>1&&x<GW-2&&y>1&&y<GH-2){ gSet(g,x,y,EMPTY); isRoad[idx(x,y)]=1; }
-    }
-    /* 据点四周留掩体，避免完全空旷 */
-    for(let t=0;t<Math.round(rw*1.2);t++){
-      const px=clamp(cx-rw-1+Math.floor(rnd2()*(rw*2+3)),2,GW-3);
-      const py=clamp(cy-rh-1+Math.floor(rnd2()*(rh*2+3)),2,GH-3);
-      if(g[idx(px,py)]===EMPTY&&((px<cx-rw-2)||(px>cx+rw+2)||(py<cy-rh-2)||(py>cy+rh+2)))
-        gSet(g,px,py, rnd2()<0.5?WALL:WIN);
-    }
-  }
-  /* ⑤ 出生区：只清出「够展开」的窄带，并在其中布置掩体。
-     ★ 旧版两侧各清 7 列（14/40 = 35% 面积全空）—— 那是「空旷感」的另一半来源。
-     现在只清 4 列，并在带内按棋盘状留掩体，让出生区也有地形可用。 */
-  for(const side of [0,1]){
-    const x0=side===0?1:GW-5;
-    for(let y=2;y<GH-2;y++) for(let x=x0;x<x0+4;x++){
-      if(inB(x,y)){ gSet(g,x,y,EMPTY); isRoad[idx(x,y)]=1; }
-    }
-    /* 出生带里也放一些掩体（隔行、错位），避免是一条完全空白的走廊 */
-    for(let y=3;y<GH-3;y+=4){
-      const x=x0+((y%8===3)?1:2);
-      if(inB(x,y)) gSet(g,x,y, rnd2()<0.55?WALL:WIN);
-    }
-  }
-  /* ⑥ ★ 公平性：改用「中心旋转对称（180°）」而不是「左右镜像」。
-     为什么换：
-       左右镜像要求每一行左右两侧完全一样，于是**所有道路必然横平竖直、
-       成排成列** —— 用户看到的「都是田字、没有崎岖的路」正是它造成的。
-       镜像把随机生成的有机路网强行拉回规整。
 
-     180° 旋转对称（点 (x,y) ↔ (GW-1-x, GH-1-y)）同样保证两队收益对等，
-     但**允许道路斜着走、允许不对称的街区形状**：
-     一条从左上蜿蜒到右下的路，旋转后在对面就是右下到左上，
-     两边地形难度一致，视觉上却完全不是田字。
-
-     取「更保守」的值（墙 > 门 > 窗 > 空地）以保证通路不被意外打通/堵死。 */
-  const rank=t=>(t===WALL?3:(t===DOOR?2:(t===WIN?1:0)));
-  for(let y=1;y<GH-1;y++){
-    for(let x=1;x<GW-1;x++){
-      const mx=GW-1-x, my=GH-1-y;
-      if(mx<=x&&my<=y) continue;                 // 只处理一半，另一半跟着改
-      if(mx<1||my<1||mx>=GW-1||my>=GH-1) continue;
-      const a=g[idx(x,y)], b=g[idx(mx,my)];
-      if(a===b) continue;
-      const pick=rank(a)>=rank(b)?a:b;
-      gSet(g,x,y,pick);
-      gSet(g,mx,my,pick);
+  /* ④ 公平性：180° 旋转对称（下半区由上半区旋转而来）。
+     保证两队地形完全对等。 */
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const my = H - 1 - y, mx = W - 1 - x;
+      if (!(y > my || (y === my && x > mx))) continue;
+      gSet(g, x, y, g[idx(mx, my)]);
+      isRoad[idx(x, y)] = isRoad[idx(mx, my)];
     }
   }
-  g._style=S;
-  g._streets=isRoad;
+
+  g._style = S;
+  g._streets = isRoad;
   return g;
 }
+
+/* 兼容旧调用点 */
+function buildTacticalMap(style, seed) {
+  const S = MAP_STYLE[style] ? style : 'balanced';
+  const seedMap = { open: 11001, balanced: 11002, urban: 11003, fort: 11004 };
+  return buildCityMap(S, seed || seedMap[S] || 11002);
+}
+
+
 
 const PRESET_STYLE={
   open:'open', balanced:'balanced', urban:'urban', fort:'fort',
@@ -1902,7 +1770,17 @@ const PRESET_STYLE={
   plaza:'balanced', fortress:'fort', warehouse:'urban', city:'urban',
 };
 const PRESET_SEED={ open:11001, balanced:11002, urban:11003, fort:11004 };
+/* 按 key 生成地图。
+   ★ 必须优先走 PRESETS[kind].build() —— 那是**每张图的权威生成器**。
+     踩过的坑：这里原本只查 PRESET_STYLE 映射表，而 mission1~4
+     不在表里 → 全部回退到 'balanced' →
+     点「城市街区 / 市中心 / 老城巷道 / 近郊平房」四个按钮，
+     地图纹丝不动（用户反馈「地图不能用的按钮还是存在」）。
+     现在：有 PRESETS 条目就用它自己的 build()，没有才退回风格表。 */
 function buildPreset(kind){
+  if(typeof PRESETS!=='undefined' && PRESETS[kind] && typeof PRESETS[kind].build==='function'){
+    return PRESETS[kind].build();
+  }
   const style=PRESET_STYLE[kind]||'balanced';
   const seed=PRESET_SEED[style]||11002;
   return buildTacticalMap(style, seed);
@@ -1978,7 +1856,16 @@ function auditMap(g){
   /* ② 中段必须有掩体，否则 hold / cover 预设找不到依托 */
   if(st.midBlocks<6) issues.push('中段过于空旷（挡视线方块仅 '+st.midBlocks+'），AI 找不到掩体');
   /* ③ 必须有门：门是僵尸的瓶颈，也是人类的机动通道 */
-  if(st.door<2) issues.push('几乎没有门，僵尸缺少可撞开的瓶颈、人类缺少机动通道');
+  /* ③ 可透视掩体（门 + 窗）。
+     ★ 门槛按「实际掩体量」算，不是按地图面积硬算。
+       掩体改成稀疏柱子后（对齐参考作品 5~12%），
+       `open` 这种极稀疏风格整张图只有几十块掩体，
+       门窗自然只有个位数 —— 那是设计如此，不是缺陷。
+       真正要禁止的是「整张图全是实心墙、没有任何可透视位置」，
+       所以门槛设得很低：至少有 3 个开口就行。 */
+  if ((st.door + st.win) < 3) {
+    issues.push('整个地图没有可透视掩体（门+窗仅 ' + (st.door + st.win) + ' 个）');
+  }
   /* ④ 出生区左右各要有掩体与窗，供人类后撤依托 */
   if(st.blocksL<4||st.blocksR<4) issues.push('出生区附近掩体不足，人类后撤无处依托');
   if(st.winL<1||st.winR<1) issues.push('缺少窗口，无法形成隔窗对射的掩体收益');
@@ -3645,7 +3532,9 @@ function musicAuto(){
   const c=counts();
   const h=G.teams&&G.teams[0]?c.teams[0].total:0;
   const z=G.teams&&G.teams[1]?c.teams[1].total:0;
-  const tense=(h>0&&z>0&&h/Math.max(1,z)<0.55)||G.time>G.matchTime-45;
+  /* 紧张音乐只在「人数劣势」时切 —— 原来还有个「最后 45 秒也紧张」的条件，
+     时间限制移除后那个条件没有意义了，去掉。 */
+  const tense=(h>0&&z>0&&h/Math.max(1,z)<0.55);
   const want=tense?'music_tense':'music_calm';
   if(musicTrack!==want) playMusic(want);
 }
@@ -3669,8 +3558,8 @@ const SFX_RECIPES={
   rocketFly: ()=>{ playClip('rpg_flight'); },
   /* 近战：真实拳击/命中录音（4 变体随机） */
   melee:   ()=>{ playClip(pickClip(['melee','melee2','melee3','melee4'])); },
-  /* 盾击：金属命中录音 */
-  bash:    ()=>{ if(!playClip('metalhit')) playClip('melee3'); },
+  /* 盾击：金属命中录音。`metalhit` 不存在 → 用真实拳击样本兜底 */
+  bash:    ()=>{ if(!playClip('melee3')) playClip('melee4'); },
   /* 爆炸：真实录音 */
   explode: ()=>{ if(!playClip(pickClip(['boom','boom2','boom3']))) playClip('explode'); },
   /* ---- 动作 / 投掷物 / 僵尸（全部真实录音）---- */
@@ -3679,16 +3568,25 @@ const SFX_RECIPES={
   launch:  ()=>{ if(!playClip('launch')) playClip('rocket'); },
   empty:   ()=>{ playClip('empty'); },             // 弹匣打空
   groan:   ()=>{ playClip('groan'); },             // 僵尸嘶吼
-  zhit:    ()=>{ if(!playClip('fleshhit')) playClip('zpain'); },  // 击中肉响
-  richochet:()=>{ playClip('stonehit'); },         // 子弹打墙
-  woodbreak:()=>{ playClip('woodhit'); },          // 砸门砸窗
+  /* ★ 击中肉响。原来引用了 `fleshhit`，但 SFX_CLIPS 里**没有这个样本** ——
+     于是每次命中都是静音（玩家感觉「打击没反馈」）。
+     现在改成用真实存在的样本：zpain（僵尸痛呼）→ melee4（拳击）双兜底。 */
+  zhit:    ()=>{ if(!playClip(pickClip(['zpain','groan']))) playClip('melee4'); },
+  /* ★ 子弹打墙。`stonehit` 不存在 → 改用真实存在的 melee3 作质感兜底。
+     命中墙面用「短促硬质敲击」，melee3 是最接近的可用样本。 */
+  richochet:()=>{ if(!playClip('melee3')) playClip('melee2'); },
+  /* ★ 砸门砸窗。`woodhit` 不存在 → 这是**最常触发**的音效之一
+     （僵尸一直在砸门），缺了它整场几乎听不到破坏声。
+     用 melee 系列（真实拳击/撞击录音）兜底。 */
+  woodbreak:()=>{ if(!playClip('melee2')) playClip('melee'); },
   /* ★ 以下原本是 tone() 合成音 —— 全部换成真实录音。
      这些音效触发极频繁（灼烧 0.8s 一次、受伤、感染、尸变、治疗、换弹），
      几十个单位同时触发时，一大堆振荡器叠加就是用户听到的「嘈杂声」。
      现在：有真实样本就用样本，没有就**静音**（宁可不出声，也不出电子音）。 */
   burn:    ()=>{ playClip('burn_damage'); },
   reload:  ()=>{ playClip('switch'); },
-  hurt:    ()=>{ playClip('fleshhit'); },
+  /* ★ 受伤。`fleshhit` 不存在 → 改用真实存在的人类痛呼样本。 */
+  hurt:    ()=>{ if(!playClip(pickClip(['human_pain','human_pain2']))) playClip('melee4'); },
   infect:  ()=>{ playClip('zpain'); },
   convert: ()=>{ playClip('zdie0'); },
   heal:    ()=>{},                                 // 治疗不再出声（原为柔和合成音）
@@ -3705,7 +3603,7 @@ const SFX_RECIPES={
   killMulti: ()=>{},
   killFirst: ()=>{},
   /* ---- 真人受伤 / 阵亡 ---- */
-  humanPain:  ()=>{ if(!playClip(pickClip(['human_pain','human_pain2']))) playClip('hurt'); },
+  humanPain:  ()=>{ if(!playClip(pickClip(['human_pain','human_pain2']))) playClip('melee4'); },
   humanDeath: ()=>{ playClip('human_death'); },
   /* ---- 僵尸：嚎叫（6 变体）/ 死亡（3 变体）/ 低吼（4 变体） ---- */
   zombieCall:  ()=>{ playClip(pickClip(['zcall0','zcall1','zcall2','zcall3','zcall4','zcall5'])); },
