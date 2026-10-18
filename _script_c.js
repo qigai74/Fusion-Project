@@ -1197,6 +1197,13 @@ function setGameMode(m){
 $$('.modebtn').forEach(function(b){
   b.addEventListener('click',function(){ setGameMode(b.dataset.mode); });
 });
+/* ★ 初始化时必须跑一次 setGameMode。
+   踩过的坑：页签显隐只在「点击模式按钮」时更新，
+   而 HTML 里所有页签默认都没有 hide ——
+   于是玩家一进配置页，常规模式下也能看到「撤离设置 / 预算编队」两个页签
+   （实测 gameMode='normal' 但 mission/budget 页签 display=block）。
+   这里在绑定完按钮后立刻同步一次初始状态。 */
+try{ setGameMode(gameMode||'normal'); }catch(e){}
 $$('.tool').forEach(b=>b.addEventListener('click',()=>{
   $$('.tool').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); tool=parseInt(b.dataset.tool,10);
@@ -2519,6 +2526,10 @@ window.QB = {
       infected:inf,bullets:G.bullets.length,result:G.result,map:Array.from(G.map),
       kills:G.kills.slice(),infections:G.infections,converted:G.converted,
       behavior:G.behavior,selected:G.selected.size,showNums:G.showNums,
+      /* ★ paused / speed 补进状态快照：
+         界面上的暂停与倍速只体现在按钮文字，自动化测试与外部脚本
+         没有可读的状态字段，只能去猜 —— 这里直接暴露出来。 */
+      paused:!!G.paused, speed:G.speed,
       reloadOn:G.reloadOn,waveOn:waveOn,waveIdx:G.waveIdx,waves:waves.length,
       hHp:+hpFrac(0).toFixed(3), zHp:teams[1]?+hpFrac(1).toFixed(3):0,
       intactDoors:G.doorHP.reduce((n,v)=>n+(v>0?1:0),0),
