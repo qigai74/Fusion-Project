@@ -57,7 +57,7 @@ function updateHUD(dt){
   }).join('');
 }
 /* 战况面板：兵种计数 + 双方人数 + 对向血条 + Boss 血条
-   信息层次参考对局视频：先看「还剩什么兵」，再看「谁多」，最后看「Boss 血线」。 */
+   信息层次按「紧急程度」排：先看「还剩什么兵」，再看「谁多」，最后看「Boss 血线」。 */
 function renderWarBar(){
   /* ★ 战况面板在改版后已经**直接放进右侧栏**，不再有 #warBar 外层容器。
      旧代码开头是 `const bar=$('#warBar'); if(!bar) return;`，
